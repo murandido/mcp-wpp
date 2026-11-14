@@ -2,6 +2,8 @@ module github.com/murandido/mcp-wpp
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	github.com/mark3labs/mcp-go v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.52
