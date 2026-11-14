@@ -222,7 +222,7 @@ func TestAddressBookNamesForNumberChats(t *testing.T) {
 	if err != nil || len(chats) != 1 || chats[0].Name != "Cauéca" {
 		t.Fatalf("list_chats by address-book name: %+v, %v", chats, err)
 	}
-	if !isNumberName("+55 64 99000-0001", jid) || isNumberName("Cauéca", jid) {
+	if !isNumberName("+55 64 99000-0001", jid) || !isNumberName("269458362876067", jid) || isNumberName("Cauéca", jid) || isNumberName("Casa 2", jid) {
 		t.Fatal("isNumberName misclassifies")
 	}
 }
