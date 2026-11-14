@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build: Go + SQLCipher -------------------------------------------------
-FROM docker.io/library/golang:1.26-trixie@sha256:19ce7a1fdc59527aa568805ea100c380900d059d251e914fb86e11fd0ce68952 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS build
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libsqlcipher-dev \
