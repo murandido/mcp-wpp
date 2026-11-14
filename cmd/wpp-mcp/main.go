@@ -29,6 +29,7 @@ Usage:
 Commands:
   serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
   access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
+  outbox       Approve or reject what the AI proposed to send (with serve -write)
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
   open-ui      Print a single-use browser login link (-page /access for the access page)
   keygen       Create a new encryption key file (back it up!)
@@ -52,6 +53,7 @@ serve flags:
   -allow-remote          Allow binding to a non-loopback address
   -allowed-host LIST     Extra Host/Origin values to accept, e.g. a reverse proxy hostname
   -write                 Expose tools that send or change the account (default: read-only)
+  -confirm-sends         With -write, sends wait for your approval (default true)
   -tools LIST            Tool groups or names to expose (default: core,messaging,transcribe,labels,access)
   -disable-tools LIST    Tool groups or names to hide
   -max-sends-per-hour N  Outbound send cap (default 30)
@@ -123,6 +125,8 @@ func main() {
 		code = runServe(storeDir, redactor, rest)
 	case "smoke":
 		code = runSmoke(storeDir, redactor, rest)
+	case "outbox":
+		code = runOutbox(storeDir, rest)
 	case "access":
 		code = runAccess(storeDir, rest)
 	case "keygen":

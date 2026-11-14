@@ -92,7 +92,7 @@ func TestHTTP_ReadOnlyMode(t *testing.T) {
 
 func TestHTTP_TranscriptionNotConfigured(t *testing.T) {
 	t.Setenv("WPP_MCP_TRANSCRIBE_URL", "")
-	h := newHarness(t, "-write")
+	h := newHarness(t, "-write", "-confirm-sends=false")
 	h.initializeMCP()
 	h.allow(t, "447700000123@s.whatsapp.net")
 	result := h.callTool("transcribe_audio", map[string]any{

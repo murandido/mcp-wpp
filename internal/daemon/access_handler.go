@@ -24,7 +24,7 @@ type AccessStore interface {
 	DecideAccessRequest(ctx context.Context, id int64, approve bool, jids []string) error
 }
 
-//go:embed templates/access.html.tmpl
+//go:embed templates/access.html.tmpl templates/outbox.html.tmpl
 var accessTemplateFS embed.FS
 
 var accessTmpl = template.Must(template.New("access.html.tmpl").Funcs(template.FuncMap{

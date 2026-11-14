@@ -34,11 +34,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		disableTools  string
 		maxPerHour    int
 		retainDays    int
+		confirmSends  = true
 	)
 	for _, b := range []struct {
 		env string
 		dst *bool
-	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}} {
+	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}, {"WPP_MCP_CONFIRM_SENDS", &confirmSends}} {
 		if value := os.Getenv(b.env); value != "" {
 			v, err := strconv.ParseBool(value)
 			if err != nil {
@@ -76,6 +77,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
 	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
+	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, record sends and account changes as proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately (env WPP_MCP_CONFIRM_SENDS)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -185,14 +187,18 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		ReadOnly:      !write,
 		LabelsEnabled: labelsEnabled,
 		Tools:         selection,
+		ConfirmSends:  confirmSends,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tools: %v\n", err)
 		return 2
 	}
-	if write {
-		fmt.Fprintln(os.Stderr, "write mode: tools that send messages or change the account are enabled")
-	} else {
+	switch {
+	case write && confirmSends:
+		fmt.Fprintln(os.Stderr, "write mode: sends and account changes wait for approval (wpp-mcp outbox)")
+	case write:
+		fmt.Fprintln(os.Stderr, "write mode WITHOUT confirmation: tools send messages and change the account immediately")
+	default:
 		fmt.Fprintln(os.Stderr, "read-only mode (default): pass -write to enable sending")
 	}
 	fmt.Fprintf(os.Stderr, "tools (%d): %s\n", len(mcpServer.ToolNames()), strings.Join(mcpServer.ToolNames(), ", "))
@@ -200,6 +206,9 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
 	d.SetMCPMount(mcpServer.AttachHTTP)
+	if write && confirmSends {
+		d.SetOutbox(mcpServer)
+	}
 	if retainDays > 0 {
 		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)
 		go c.RunRetention(ctx, time.Duration(retainDays)*24*time.Hour)

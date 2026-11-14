@@ -28,6 +28,7 @@ type Server struct {
 	cache         pairingCache
 	readOnly      bool
 	labelsEnabled bool
+	confirmSends  bool
 }
 
 // NewServer constructs an MCP server with all tools registered against the
@@ -44,6 +45,9 @@ type Options struct {
 	ReadOnly bool
 	// LabelsEnabled registers the WhatsApp Business label tools.
 	LabelsEnabled bool
+	// ConfirmSends makes write tools record a proposal for the user to
+	// approve instead of acting (see outbox.go).
+	ConfirmSends bool
 	// Tools selects tool groups/names. A nil Tools exposes every registered
 	// tool (tests and smoke); the daemon always passes a selection.
 	Tools *ToolSelection
@@ -75,13 +79,19 @@ func NewServerWithOptions(c *client.Client, cache pairingCache, opts Options) (*
 	if opts.ReadOnly {
 		instructions += " This server is in read-only mode: tools cannot send messages or mutate the WhatsApp account. Downloads and history requests can still retrieve data and write the local cache. An explicit media download may ask your own phone to re-upload an expired attachment; it never notifies the sender or chat. Pairing remains an operator action."
 	}
-	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled}
+	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled, confirmSends: opts.ConfirmSends && !opts.ReadOnly}
+	if s.confirmSends {
+		instructions += " Sending and other account changes need the user's approval: such tools return a proposal_id and send nothing until the user approves it."
+	}
 	s.mcp = server.NewMCPServer(
 		"whatsapp",
 		Version,
 		server.WithToolCapabilities(true),
 		server.WithInstructions(instructions),
+		// Access is checked first, so a hidden chat is refused before any
+		// proposal is recorded.
 		server.WithToolHandlerMiddleware(s.accessMiddleware),
+		server.WithToolHandlerMiddleware(s.confirmMiddleware),
 	)
 	s.registerTools()
 	for name := range s.mcp.ListTools() {

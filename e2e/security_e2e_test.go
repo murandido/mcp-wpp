@@ -8,7 +8,7 @@ import (
 )
 
 func TestSendFileRejectsOutOfRootPath(t *testing.T) {
-	h := newHarness(t, "-write")
+	h := newHarness(t, "-write", "-confirm-sends=false")
 	h.initializeMCP()
 	h.allow(t, "00000000@s.whatsapp.net")
 

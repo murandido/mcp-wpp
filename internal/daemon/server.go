@@ -62,6 +62,9 @@ type Config struct {
 	// Access, when set, enables the consent workflow: /admin/access/* for
 	// the CLI and the /access page.
 	Access AccessStore
+	// Outbox, when set, serves send proposals for approval: /admin/outbox/*
+	// and the /outbox page.
+	Outbox Outbox
 	// AdminMount, if non-nil, registers extra operator endpoints. They are
 	// served under /admin/* (bearer only) or as browser pages.
 	AdminMount func(mux *http.ServeMux)
@@ -110,6 +113,10 @@ func (s *Server) Cache() *PairCache { return s.cache }
 // so setting it any time before Run takes effect.
 func (s *Server) SetMCPMount(fn func(mux *http.ServeMux)) { s.cfg.MCPMount = fn }
 
+// SetOutbox installs the proposal queue after construction, for the same
+// reason as SetMCPMount: the MCP server that implements it is built later.
+func (s *Server) SetOutbox(ob Outbox) { s.cfg.Outbox = ob }
+
 // BoundAddr returns the address the HTTP listener actually bound to, useful
 // when Addr was "host:0". Only valid after <-s.listenerOK fires.
 func (s *Server) BoundAddr() string {
@@ -155,6 +162,9 @@ func (s *Server) Run(ctx context.Context) error {
 	ui.mount(mux)
 	if s.cfg.Access != nil {
 		newAccessHandlers(s.cfg.Access).mount(mux)
+	}
+	if s.cfg.Outbox != nil {
+		(&outboxHandlers{ob: s.cfg.Outbox}).mount(mux)
 	}
 	if s.cfg.AdminMount != nil {
 		s.cfg.AdminMount(mux)
