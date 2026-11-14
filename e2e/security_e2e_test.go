@@ -10,6 +10,7 @@ import (
 func TestSendFileRejectsOutOfRootPath(t *testing.T) {
 	h := newHarness(t, "-write")
 	h.initializeMCP()
+	h.allow(t, "00000000@s.whatsapp.net")
 
 	res := h.callTool("send_file", map[string]any{
 		"recipient":  "00000000@s.whatsapp.net",
@@ -26,6 +27,7 @@ func TestSendFileRejectsOutOfRootPath(t *testing.T) {
 func TestDownloadMediaRejectsOutOfRootOutputPath(t *testing.T) {
 	h := newHarness(t)
 	h.initializeMCP()
+	h.allow(t, "00000000@s.whatsapp.net")
 
 	res := h.callTool("download_media", map[string]any{
 		"message_id":  "any",

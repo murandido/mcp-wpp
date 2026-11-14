@@ -72,7 +72,7 @@ func (s *Store) SetChatLabel(ctx context.Context, labelID, chatJID string, label
 func (s *Store) ListLabels(ctx context.Context) ([]Label, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT l.id, l.name, l.color, COUNT(cl.chat_jid)
-		FROM labels l LEFT JOIN chat_labels cl ON cl.label_id = l.id
+		FROM labels l LEFT JOIN chat_labels cl ON cl.label_id = l.id`+s.scopeClause("cl.chat_jid")+`
 		WHERE l.deleted = 0
 		GROUP BY l.id, l.name, l.color
 		ORDER BY LOWER(l.name), l.id`)
@@ -148,7 +148,7 @@ func (s *Store) ListChatsByLabel(ctx context.Context, labelID string, limit, pag
 		all = append(all, LabeledChat{Chat: c, Cached: true})
 	}
 
-	rows, err := s.db.QueryContext(ctx, "SELECT chat_jid FROM chat_labels WHERE label_id = ? ORDER BY chat_jid", labelID)
+	rows, err := s.db.QueryContext(ctx, "SELECT chat_jid FROM chat_labels WHERE label_id = ?"+s.scopeClause("chat_jid")+" ORDER BY chat_jid", labelID)
 	if err != nil {
 		return nil, fmt.Errorf("list label associations: %w", err)
 	}
@@ -186,6 +186,7 @@ func (s *Store) ListChatsByLabel(ctx context.Context, labelID string, limit, pag
 func (s *Store) queryCachedLabeledChats(ctx context.Context, labelID string, includeLastMessage bool) ([]Chat, error) {
 	q := chatSelectSQL("chats", includeLastMessage) +
 		" WHERE chats.jid IN (SELECT chat_jid FROM chat_labels WHERE label_id = ?)" +
+		s.scopeClause("chats.jid") +
 		" ORDER BY chats.last_message_time DESC"
 	rows, err := s.db.QueryContext(ctx, q, labelID)
 	if err != nil {
@@ -229,7 +230,7 @@ func (s *Store) LabelsForChat(ctx context.Context, chatJID string) ([]Label, err
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT l.id, l.name, l.color FROM labels l
 		JOIN chat_labels cl ON cl.label_id = l.id
-		WHERE cl.chat_jid = ? AND l.deleted = 0
+		WHERE cl.chat_jid = ? AND l.deleted = 0`+s.scopeClause("cl.chat_jid")+`
 		ORDER BY LOWER(l.name), l.id`, chatJID)
 	if err != nil {
 		return nil, fmt.Errorf("labels for chat: %w", err)

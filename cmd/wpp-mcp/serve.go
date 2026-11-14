@@ -159,6 +159,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		AuthToken:     authToken,
 		AllowedHosts:  mcpsrv.ParseToolList(allowedHosts),
 		AutoPairPhone: os.Getenv("WPP_MCP_PAIR_PHONE"),
+		Access:        st,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon.New: %v\n", err)

@@ -94,6 +94,9 @@ type Store struct {
 	db          *sql.DB
 	whatsmeowDB *sql.DB
 	dir         string
+	// scoped views (Scoped) restrict MCP-facing reads to chats the access
+	// policy allows; see access.go.
+	scoped bool
 }
 
 // Open creates (if necessary) the store directory and opens both databases.
@@ -147,6 +150,10 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 	if _, err := db.Exec(transcriptsSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply transcripts schema: %w", err)
+	}
+	if _, err := db.Exec(accessSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply access schema: %w", err)
 	}
 	// Tighten messages.db after schema has been applied (the file exists
 	// by then). IsNotExist-tolerate in case a future sqlite driver version

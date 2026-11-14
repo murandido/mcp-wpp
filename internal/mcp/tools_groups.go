@@ -88,7 +88,7 @@ func (s *Server) registerListGroups() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		js, err := s.client.ListJoinedGroups(ctx)
+		js, err := s.client.ListJoinedGroupsFiltered(ctx, func(jid string) bool { return s.allowedChat(ctx, jid) })
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

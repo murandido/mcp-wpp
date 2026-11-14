@@ -25,7 +25,7 @@ func (s *Server) registerListLabels() {
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	s.mcp.AddTool(tool, func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		labels, err := s.client.Store().ListLabels(ctx)
+		labels, err := s.store().ListLabels(ctx)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -56,7 +56,7 @@ func (s *Server) registerListChatsByLabel() {
 		if r := requireNonEmpty("label", a.Label); r != nil {
 			return r, nil
 		}
-		label, err := s.client.Store().ResolveLabel(ctx, a.Label)
+		label, err := s.store().ResolveLabel(ctx, a.Label)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -67,7 +67,7 @@ func (s *Server) registerListChatsByLabel() {
 		if a.IncludeLastMessage != nil {
 			includeLast = *a.IncludeLastMessage
 		}
-		chats, err := s.client.Store().ListChatsByLabel(ctx, label.ID, a.Limit, a.Page, includeLast)
+		chats, err := s.store().ListChatsByLabel(ctx, label.ID, a.Limit, a.Page, includeLast)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -92,7 +92,7 @@ func (s *Server) registerGetChatLabels() {
 		if r := requireNonEmpty("jid", a.JID); r != nil {
 			return r, nil
 		}
-		labels, err := s.client.Store().LabelsForChat(ctx, a.JID)
+		labels, err := s.store().LabelsForChat(ctx, a.JID)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

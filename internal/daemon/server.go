@@ -59,6 +59,9 @@ type Config struct {
 	// the daemon request a pairing code for this number once and print it
 	// to stderr (headless and container setups).
 	AutoPairPhone string
+	// Access, when set, enables the consent workflow: /admin/access/* for
+	// the CLI and the /access page.
+	Access AccessStore
 	// AdminMount, if non-nil, registers extra operator endpoints. They are
 	// served under /admin/* (bearer only) or as browser pages.
 	AdminMount func(mux *http.ServeMux)
@@ -150,6 +153,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 	ui := newUIAuth()
 	ui.mount(mux)
+	if s.cfg.Access != nil {
+		newAccessHandlers(s.cfg.Access).mount(mux)
+	}
 	if s.cfg.AdminMount != nil {
 		s.cfg.AdminMount(mux)
 	}

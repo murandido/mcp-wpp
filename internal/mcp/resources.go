@@ -49,6 +49,10 @@ func (s *Server) handleMediaResource(ctx context.Context, req mcp.ReadResourceRe
 	if err != nil {
 		return nil, fmt.Errorf("invalid whatsapp media URI %q: %w", req.Params.URI, err)
 	}
+	// Resources bypass the tool middleware, so apply the access policy here.
+	if !s.allowedChat(ctx, chatJID) {
+		return nil, fmt.Errorf("chat not found: %s", chatJID)
+	}
 	r := s.client.DownloadWithMediaRetry(ctx, messageID, chatJID, "")
 	if !r.Success {
 		return nil, fmt.Errorf("download media for %s/%s: %s", chatJID, messageID, r.Message)

@@ -65,6 +65,9 @@ func (s *Store) ListMessages(ctx context.Context, params ListMessagesParams) ([]
 		whereClauses = append(whereClauses, "LOWER(messages.content) LIKE LOWER(?)")
 		args = append(args, "%"+params.Query+"%")
 	}
+	if s.scoped {
+		whereClauses = append(whereClauses, accessFilter("messages.chat_jid"))
+	}
 
 	var b strings.Builder
 	b.WriteString("SELECT " + listMessageColumns + " FROM messages")
@@ -137,10 +140,12 @@ func (s *Store) ListChats(ctx context.Context, query string, limit, page int, in
 	b.WriteString(chatSelectSQL("chats", includeLastMessage))
 
 	var args []any
+	b.WriteString(" WHERE 1=1")
 	if query != "" {
-		b.WriteString(" WHERE (LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
+		b.WriteString(" AND (LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
 		args = append(args, "%"+query+"%", "%"+query+"%")
 	}
+	b.WriteString(s.scopeClause("chats.jid"))
 
 	if sortBy == "name" {
 		b.WriteString(" ORDER BY chats.name")
@@ -177,6 +182,7 @@ func (s *Store) GetChat(ctx context.Context, jid string, includeLastMessage bool
 	var b strings.Builder
 	b.WriteString(chatSelectSQL("c", includeLastMessage))
 	b.WriteString(" WHERE c.jid = ?")
+	b.WriteString(s.scopeClause("c.jid"))
 
 	row := s.db.QueryRowContext(ctx, b.String(), jid)
 	c, err := scanChatRow(row)
@@ -201,7 +207,7 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 		FROM chats
 		WHERE (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
 		  AND jid NOT LIKE '%@g.us'
-		  AND jid NOT LIKE '%@lid'
+		  AND jid NOT LIKE '%@lid'`+s.scopeClause("jid")+`
 		ORDER BY name, jid
 		LIMIT 50`, pattern, pattern)
 	if err != nil {
@@ -240,6 +246,12 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 		if seen[jid] {
 			continue
 		}
+		// Address-book entries without an authorised chat stay hidden.
+		if s.scoped {
+			if ok, err := s.ChatAllowed(ctx, jid); err != nil || !ok {
+				continue
+			}
+		}
 		result = append(result, Contact{PhoneNumber: jidUser(jid), Name: name, JID: jid})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -262,7 +274,7 @@ func (s *Store) GetMessageContext(ctx context.Context, messageID string, before,
 		       messages.edited_at IS NOT NULL, messages.revoked_at
 		FROM messages
 		JOIN chats ON messages.chat_jid = chats.jid
-		WHERE messages.id = ?`, messageID)
+		WHERE messages.id = ?`+s.scopeClause("messages.chat_jid"), messageID)
 
 	var (
 		ts        time.Time

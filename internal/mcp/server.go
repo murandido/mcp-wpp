@@ -71,17 +71,18 @@ func NewServerWithOptions(c *client.Client, cache pairingCache, opts Options) (*
 			return nil, err
 		}
 	}
-	instructions := ""
+	instructions := accessInstructions
 	if opts.ReadOnly {
-		instructions = "This server is in read-only mode: tools cannot send messages or mutate the WhatsApp account. Downloads and history requests can still retrieve data and write the local cache. An explicit media download may ask your own phone to re-upload an expired attachment; it never notifies the sender or chat. Pairing remains an operator action."
+		instructions += " This server is in read-only mode: tools cannot send messages or mutate the WhatsApp account. Downloads and history requests can still retrieve data and write the local cache. An explicit media download may ask your own phone to re-upload an expired attachment; it never notifies the sender or chat. Pairing remains an operator action."
 	}
-	mcpSrv := server.NewMCPServer(
+	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled}
+	s.mcp = server.NewMCPServer(
 		"whatsapp",
 		Version,
 		server.WithToolCapabilities(true),
 		server.WithInstructions(instructions),
+		server.WithToolHandlerMiddleware(s.accessMiddleware),
 	)
-	s := &Server{client: c, mcp: mcpSrv, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled}
 	s.registerTools()
 	for name := range s.mcp.ListTools() {
 		if opts.ReadOnly && !readOnlyToolAccess[name] {

@@ -94,6 +94,7 @@ func TestHTTP_TranscriptionNotConfigured(t *testing.T) {
 	t.Setenv("WPP_MCP_TRANSCRIBE_URL", "")
 	h := newHarness(t, "-write")
 	h.initializeMCP()
+	h.allow(t, "447700000123@s.whatsapp.net")
 	result := h.callTool("transcribe_audio", map[string]any{
 		"message_id": "AUDIO-1",
 		"chat_jid":   "447700000123@s.whatsapp.net",

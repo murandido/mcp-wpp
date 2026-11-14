@@ -28,8 +28,9 @@ Usage:
 
 Commands:
   serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
+  access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
-  open-ui      Print a single-use browser login link for the /pair page
+  open-ui      Print a single-use browser login link (-page /access for the access page)
   keygen       Create a new encryption key file (back it up!)
   encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
   pair         Link WhatsApp: -phone +<number> for a pairing code, or a QR in the terminal
@@ -121,6 +122,8 @@ func main() {
 		code = runServe(storeDir, redactor, rest)
 	case "smoke":
 		code = runSmoke(storeDir, redactor, rest)
+	case "access":
+		code = runAccess(storeDir, rest)
 	case "keygen":
 		code = runKeygen(rest)
 	case "encrypt":

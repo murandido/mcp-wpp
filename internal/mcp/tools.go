@@ -27,6 +27,7 @@ var readOnlyToolAccess = map[string]bool{
 	"mark_chat_read":            false,
 	"mark_read":                 false,
 	"pairing_status":            true,
+	"request_chat_access":       true, // records a request only; the user decides
 	"request_sync":              true,
 	"resync_labels":             true,
 	"search_contacts":           true,
@@ -78,6 +79,8 @@ func (s *Server) registerTools() {
 	if s.labelsEnabled {
 		s.registerLabelTools()
 	}
+	// Per-chat consent.
+	s.registerAccessTools()
 	// Speech-to-text for voice notes (opt-in; needs WPP_MCP_TRANSCRIBE_URL).
 	s.registerTranscribeTools()
 }

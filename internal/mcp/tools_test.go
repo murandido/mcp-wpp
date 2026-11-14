@@ -40,6 +40,7 @@ var expectedToolNames = []string{
 	"mark_chat_read",
 	"mark_read",
 	"pairing_status",
+	"request_chat_access",
 	"request_sync",
 	"resync_labels",
 	"search_contacts",
@@ -127,7 +128,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 47
+	const want = 48
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -140,8 +141,8 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 43 {
-		t.Fatalf("default tool count = %d, want 43", got)
+	if got := len(s.MCP().ListTools()); got != 44 {
+		t.Fatalf("default tool count = %d, want 44", got)
 	}
 }
 
@@ -194,6 +195,7 @@ var expectedReadOnlyTools = map[string]bool{
 	"list_labels":          true,
 	"list_messages":        true,
 	"pairing_status":       true,
+	"request_chat_access":  true,
 	"request_sync":         true,
 	"resync_labels":        true,
 	"search_contacts":      true,

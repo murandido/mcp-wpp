@@ -72,12 +72,25 @@ func (c *Client) LeaveGroup(ctx context.Context, chatJID string) error {
 
 // ListJoinedGroups returns JSON of all groups the user is in.
 func (c *Client) ListJoinedGroups(ctx context.Context) (string, error) {
+	return c.ListJoinedGroupsFiltered(ctx, nil)
+}
+
+// ListJoinedGroupsFiltered is ListJoinedGroups keeping only groups for
+// which keep returns true (nil keeps all). The MCP server passes the access
+// policy here, since this list comes live from WhatsApp, not the cache.
+func (c *Client) ListJoinedGroupsFiltered(ctx context.Context, keep func(jid string) bool) (string, error) {
 	if !c.wa.IsConnected() {
 		return "", errors.New("not connected to WhatsApp")
 	}
-	groups, err := c.wa.GetJoinedGroups(ctx)
+	all, err := c.wa.GetJoinedGroups(ctx)
 	if err != nil {
 		return "", fmt.Errorf("list joined groups: %w", err)
+	}
+	groups := all[:0]
+	for _, g := range all {
+		if keep == nil || keep(g.JID.String()) {
+			groups = append(groups, g)
+		}
 	}
 	b, err := json.Marshal(groups)
 	if err != nil {

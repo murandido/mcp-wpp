@@ -39,7 +39,7 @@ func (s *Server) registerSearchContacts() {
 		mcp.WithOpenWorldHintAnnotation(false),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, a searchContactsArgs) (*mcp.CallToolResult, error) {
-		contacts, err := s.client.Store().SearchContacts(ctx, a.Query)
+		contacts, err := s.store().SearchContacts(ctx, a.Query)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -118,11 +118,11 @@ func (s *Server) registerListMessages() {
 			}
 			params.Before = t
 		}
-		msgs, err := s.client.Store().ListMessages(ctx, params)
+		msgs, err := s.store().ListMessages(ctx, params)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(s.client.Store().FormatMessagesList(ctx, msgs, true)), nil
+		return mcp.NewToolResultText(s.store().FormatMessagesList(ctx, msgs, true)), nil
 	}))
 }
 
@@ -155,7 +155,7 @@ func (s *Server) registerListChats() {
 			sortBy = "last_active"
 		}
 		include := a.IncludeLastMessage == nil || *a.IncludeLastMessage
-		chats, err := s.client.Store().ListChats(ctx, a.Query, a.Limit, a.Page, include, sortBy)
+		chats, err := s.store().ListChats(ctx, a.Query, a.Limit, a.Page, include, sortBy)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -182,7 +182,7 @@ func (s *Server) registerGetChat() {
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, a getChatArgs) (*mcp.CallToolResult, error) {
 		include := a.IncludeLastMessage == nil || *a.IncludeLastMessage
-		chat, err := s.client.Store().GetChat(ctx, a.ChatJID, include)
+		chat, err := s.store().GetChat(ctx, a.ChatJID, include)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -220,7 +220,7 @@ func (s *Server) registerGetMessageContext() {
 		if after <= 0 {
 			after = 5
 		}
-		ctxResult, err := s.client.Store().GetMessageContext(ctx, a.MessageID, before, after)
+		ctxResult, err := s.store().GetMessageContext(ctx, a.MessageID, before, after)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
