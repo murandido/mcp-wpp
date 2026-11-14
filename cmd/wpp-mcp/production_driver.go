@@ -104,6 +104,11 @@ func (p *productionDriver) StartPairing(ctx context.Context, onQR func(string), 
 				case "success":
 					session.Disconnect()
 					p.clearPairingAttempt(attempt)
+					// The startup client was built unpaired; rebuild it so the
+					// Connect that onSuccess triggers actually logs in.
+					if p.c != nil {
+						p.c.AdoptPairedDevice()
+					}
 					if onSuccess != nil {
 						onSuccess()
 					}
