@@ -15,7 +15,9 @@ RUN make build VERSION=${VERSION}
 
 # ---- test: the full suite against SQLCipher (make container-test) ---------
 FROM build AS test
-RUN make lint test smoke e2e
+# The image ships Debian's SQLCipher, which has FTS5: require it here.
+ENV WPP_MCP_REQUIRE_FTS5=1
+RUN make vet fmt test smoke e2e
 
 # ---- runtime ---------------------------------------------------------------
 FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime

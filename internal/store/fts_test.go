@@ -15,10 +15,10 @@ func openFTSStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	if !s.fts {
-		if os.Getenv("WPP_MCP_REQUIRE_CIPHER") == "1" {
-			t.Fatal("FTS5 is required but this build lacks it")
+		if os.Getenv("WPP_MCP_REQUIRE_FTS5") == "1" {
+			t.Fatal("FTS5 is required but this SQLite/SQLCipher build lacks it")
 		}
-		t.Skip("FTS5 not compiled in; run through `make test`")
+		t.Skip("this SQLite/SQLCipher build lacks FTS5; search falls back to substring matching")
 	}
 	return s
 }

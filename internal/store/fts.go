@@ -66,3 +66,7 @@ func ftsMatchQuery(q string) string {
 	}
 	return strings.Join(terms, " ")
 }
+
+// FTSEnabled reports whether full-text search is available. Without it,
+// list_messages matches substrings and is accent-sensitive.
+func (s *Store) FTSEnabled() bool { return s.fts }
