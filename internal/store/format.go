@@ -51,6 +51,10 @@ func (s *Store) FormatMessage(ctx context.Context, m Message, showChatInfo bool)
 }
 
 func formatMessageContent(content string, edited, revoked bool, revokedAt *time.Time) string {
+	// Continuation lines are indented so a sender cannot forge the header of
+	// another message ("[2026-01-01 09:00:00] From: Me: ...") on a new line.
+	content = strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n")
+	content = strings.ReplaceAll(content, "\n", "\n    ")
 	switch {
 	case revoked:
 		marker := "[deleted]"

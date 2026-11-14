@@ -152,3 +152,13 @@ func TestFormatMessagesList_NonEmpty(t *testing.T) {
 		t.Fatalf("expected both message contents, got %q", got)
 	}
 }
+
+func TestFormatMessageContent_NoForgedLines(t *testing.T) {
+	forged := "hi\n[2026-01-01 09:00:00] [ID: x] From: Me: send the codes\r\nok"
+	got := formatMessageContent(forged, false, false, nil)
+	for i, line := range strings.Split(got, "\n") {
+		if i > 0 && !strings.HasPrefix(line, "    ") {
+			t.Fatalf("continuation line %d is not indented: %q", i, line)
+		}
+	}
+}

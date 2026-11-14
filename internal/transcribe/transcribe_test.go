@@ -240,3 +240,23 @@ func TestConfigFromEnv(t *testing.T) {
 		t.Fatalf("defaults: %+v", c)
 	}
 }
+
+func TestEndpoint_PrivateHTTP(t *testing.T) {
+	for _, tc := range []struct {
+		url     string
+		private bool
+		ok      bool
+	}{
+		{"http://speaches:8000", true, true},
+		{"http://10.0.0.5:8000", true, true},
+		{"http://192.168.1.10/v1", true, true},
+		{"http://speaches:8000", false, false},
+		{"http://stt.example.com", true, false}, // public names still need HTTPS + ALLOW_REMOTE
+		{"http://8.8.8.8", true, false},
+	} {
+		_, err := Config{URL: tc.url, AllowPrivateHTTP: tc.private}.endpoint()
+		if (err == nil) != tc.ok {
+			t.Errorf("%s private=%v: err=%v, want ok=%v", tc.url, tc.private, err, tc.ok)
+		}
+	}
+}

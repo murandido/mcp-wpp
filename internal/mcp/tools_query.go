@@ -122,7 +122,7 @@ func (s *Server) registerListMessages() {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(s.store().FormatMessagesList(ctx, msgs, true)), nil
+		return mcp.NewToolResultText(untrustedPreamble + s.store().FormatMessagesList(ctx, msgs, true)), nil
 	}))
 }
 

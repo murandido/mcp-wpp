@@ -54,6 +54,6 @@ func (s *Server) registerDigestTool() {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(st.FormatDigest(ctx, d, since)), nil
+		return mcp.NewToolResultText(untrustedPreamble + st.FormatDigest(ctx, d, since)), nil
 	}))
 }

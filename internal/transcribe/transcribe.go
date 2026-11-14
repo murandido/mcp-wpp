@@ -40,19 +40,23 @@ type Config struct {
 	Token       string // optional bearer token for the service
 	MaxSeconds  int    // refuse audio longer than this (default 600)
 	AllowRemote bool   // permit a non-loopback URL
-	Timeout     time.Duration
+	// AllowPrivateHTTP permits plain HTTP to a private-network service: a
+	// private IP or a single-label name such as a Docker Compose service.
+	AllowPrivateHTTP bool
+	Timeout          time.Duration
 }
 
 // ConfigFromEnv reads the WPP_MCP_TRANSCRIBE_* variables.
 func ConfigFromEnv() Config {
 	c := Config{
-		URL:         strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_URL")),
-		Model:       strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_MODEL")),
-		Language:    strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_LANGUAGE")),
-		Token:       os.Getenv("WPP_MCP_TRANSCRIBE_TOKEN"),
-		MaxSeconds:  defaultMaxSeconds,
-		AllowRemote: os.Getenv("WPP_MCP_TRANSCRIBE_ALLOW_REMOTE") == "1",
-		Timeout:     defaultTimeout,
+		URL:              strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_URL")),
+		Model:            strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_MODEL")),
+		Language:         strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_LANGUAGE")),
+		Token:            os.Getenv("WPP_MCP_TRANSCRIBE_TOKEN"),
+		MaxSeconds:       defaultMaxSeconds,
+		AllowRemote:      os.Getenv("WPP_MCP_TRANSCRIBE_ALLOW_REMOTE") == "1",
+		AllowPrivateHTTP: os.Getenv("WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP") == "1",
+		Timeout:          defaultTimeout,
 	}
 	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_MAX_SECONDS"))); err == nil && v > 0 {
 		c.MaxSeconds = v
@@ -72,11 +76,13 @@ func (c Config) endpoint() (string, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return "", fmt.Errorf("transcription: WPP_MCP_TRANSCRIBE_URL must be an http(s) URL, got %q", c.URL)
 	}
-	if !c.AllowRemote && !isLoopbackHost(u.Hostname()) {
-		return "", fmt.Errorf("transcription: refusing %q: audio would leave this machine; set WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1 to allow a non-loopback service", u.Hostname())
+	host := u.Hostname()
+	private := c.AllowPrivateHTTP && isPrivateHost(host)
+	if !c.AllowRemote && !isLoopbackHost(host) && !private {
+		return "", fmt.Errorf("transcription: refusing %q: audio would leave this machine; set WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1 to allow a non-loopback service, or WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP=1 for a service on your private network", host)
 	}
-	if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
-		return "", errors.New("transcription: non-loopback services require HTTPS to protect audio and credentials")
+	if u.Scheme != "https" && !isLoopbackHost(host) && !private {
+		return "", errors.New("transcription: non-loopback services require HTTPS to protect audio and credentials (WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP=1 permits plain HTTP on a private network)")
 	}
 	base := strings.TrimRight(u.String(), "/")
 	if !strings.HasSuffix(base, "/audio/transcriptions") {
@@ -91,6 +97,16 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// isPrivateHost reports whether host is a private-network address or a
+// single-label name (a Docker Compose service or LAN host), which public DNS
+// cannot serve.
+func isPrivateHost(host string) bool {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsPrivate() || ip.IsLoopback()
+	}
+	return host != "" && !strings.Contains(host, ".")
 }
 
 // ErrNotConfigured is returned when no service URL is set.
