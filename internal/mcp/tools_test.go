@@ -18,6 +18,7 @@ var expectedToolNames = []string{
 	"block_contact",
 	"create_group",
 	"delete_message",
+	"digest",
 	"download_media",
 	"edit_message",
 	"get_blocklist",
@@ -128,7 +129,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 48
+	const want = 49
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -141,8 +142,8 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 44 {
-		t.Fatalf("default tool count = %d, want 44", got)
+	if got := len(s.MCP().ListTools()); got != 45 {
+		t.Fatalf("default tool count = %d, want 45", got)
 	}
 }
 
@@ -179,6 +180,7 @@ func TestToolsByDomain(t *testing.T) {
 }
 
 var expectedReadOnlyTools = map[string]bool{
+	"digest":               true,
 	"download_media":       true,
 	"get_blocklist":        true,
 	"get_chat":             true,

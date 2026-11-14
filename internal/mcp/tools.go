@@ -5,6 +5,7 @@ var readOnlyToolAccess = map[string]bool{
 	"block_contact":             false,
 	"create_group":              false,
 	"delete_message":            false,
+	"digest":                    true,
 	"download_media":            true,
 	"edit_message":              false,
 	"get_blocklist":             true,
@@ -79,8 +80,9 @@ func (s *Server) registerTools() {
 	if s.labelsEnabled {
 		s.registerLabelTools()
 	}
-	// Per-chat consent.
+	// Per-chat consent and the cross-chat digest.
 	s.registerAccessTools()
+	s.registerDigestTool()
 	// Speech-to-text for voice notes (opt-in; needs WPP_MCP_TRANSCRIBE_URL).
 	s.registerTranscribeTools()
 }

@@ -61,9 +61,14 @@ func (s *Store) ListMessages(ctx context.Context, params ListMessagesParams) ([]
 		whereClauses = append(whereClauses, "messages.chat_jid = ?")
 		args = append(args, params.ChatJID)
 	}
-	if params.Query != "" {
-		whereClauses = append(whereClauses, "LOWER(messages.content) LIKE LOWER(?)")
-		args = append(args, "%"+params.Query+"%")
+	if q := strings.TrimSpace(params.Query); q != "" {
+		if s.fts && len([]rune(q)) >= minFTSQuery {
+			whereClauses = append(whereClauses, "messages.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
+			args = append(args, ftsMatchQuery(q))
+		} else {
+			whereClauses = append(whereClauses, "LOWER(messages.content) LIKE LOWER(?)")
+			args = append(args, "%"+q+"%")
+		}
 	}
 	if s.scoped {
 		whereClauses = append(whereClauses, accessFilter("messages.chat_jid"))

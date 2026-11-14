@@ -43,6 +43,7 @@ var toolAccessScope = map[string]accessScope{
 	"list_labels":         scopeRead,
 	"list_chats_by_label": scopeRead,
 	"list_groups":         scopeRead, // live list, filtered in the handler
+	"digest":              scopeRead,
 
 	// One chat, named by an argument.
 	"get_chat":                  chatArg("chat_jid"),

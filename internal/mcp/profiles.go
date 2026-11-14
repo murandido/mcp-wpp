@@ -33,6 +33,7 @@ var toolGroup = map[string]string{
 	"download_media":      groupCore,
 	"request_sync":        groupCore,
 	"get_poll_results":    groupCore,
+	"digest":              groupCore,
 
 	// messaging: write tools (also gated by -write).
 	"send_message":       groupMessaging,

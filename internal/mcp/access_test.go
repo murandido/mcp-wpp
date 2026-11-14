@@ -109,6 +109,8 @@ func TestAccess_ListToolsOnlySeeAllowedChats(t *testing.T) {
 		{"list_messages", map[string]any{"chat_jid": hiddenJID}},
 		{"search_contacts", map[string]any{"query": "bob"}},
 		{"get_message_context", map[string]any{"message_id": "msg-hidden"}},
+		{"digest", map[string]any{}},
+		{"digest", map[string]any{"chat_jids": []string{hiddenJID}}},
 	} {
 		res := callToolDirect(t, s, call.tool, call.args)
 		if strings.Contains(res.Text, "Bob Secret") || strings.Contains(res.Text, hiddenJID) {
@@ -117,6 +119,9 @@ func TestAccess_ListToolsOnlySeeAllowedChats(t *testing.T) {
 	}
 	if res := callToolDirect(t, s, "list_chats", map[string]any{}); !strings.Contains(res.Text, "Alice") {
 		t.Errorf("list_chats hides the allowed chat: %s", res.Text)
+	}
+	if res := callToolDirect(t, s, "digest", map[string]any{"hours": 1}); !strings.Contains(res.Text, "hello from Alice") {
+		t.Errorf("digest misses the allowed chat: %s", res.Text)
 	}
 }
 

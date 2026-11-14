@@ -97,6 +97,8 @@ type Store struct {
 	// scoped views (Scoped) restrict MCP-facing reads to chats the access
 	// policy allows; see access.go.
 	scoped bool
+	// fts is true when the FTS5 search index is available (fts.go).
+	fts bool
 }
 
 // Open creates (if necessary) the store directory and opens both databases.
@@ -155,6 +157,11 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply access schema: %w", err)
 	}
+	fts, err := enableFTS(db)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 	// Tighten messages.db after schema has been applied (the file exists
 	// by then). IsNotExist-tolerate in case a future sqlite driver version
 	// defers file creation.
@@ -173,7 +180,7 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		return nil, fmt.Errorf("chmod whatsapp.db: %w", err)
 	}
 
-	return &Store{db: db, whatsmeowDB: waDB, dir: dir}, nil
+	return &Store{db: db, whatsmeowDB: waDB, dir: dir, fts: fts}, nil
 }
 
 // DB returns the underlying message database handle (tests only).
