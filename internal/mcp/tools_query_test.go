@@ -62,42 +62,40 @@ func TestPairingStatus_NilCache(t *testing.T) {
 	}
 }
 
-// An unpaired cache with a pending QR yields awaiting_qr carrying the payload.
-func TestPairingStatus_AwaitingQRWithPayload(t *testing.T) {
+// A pending QR is never handed to the model: linking a device is an
+// operator action, and a prompt-injected model must not be able to relay it.
+func TestPairingStatus_NeverExposesQR(t *testing.T) {
 	env := callPairingStatus(t, NewServer(nil, fakePairCache{qr: "2@QRPAYLOAD"}, false))
-	if env["state"] != "awaiting_qr" {
-		t.Fatalf("state = %v, want awaiting_qr", env["state"])
+	if env["state"] != "awaiting_pairing" {
+		t.Fatalf("state = %v, want awaiting_pairing", env["state"])
 	}
-	if env["qr_payload"] != "2@QRPAYLOAD" {
-		t.Errorf("qr_payload = %v, want 2@QRPAYLOAD", env["qr_payload"])
-	}
-	if env["detail"] != "Scan with WhatsApp → Linked devices" {
-		t.Errorf("detail = %v, want the scan instruction", env["detail"])
+	raw, _ := json.Marshal(env)
+	if strings.Contains(string(raw), "QRPAYLOAD") {
+		t.Fatalf("pairing_status leaked the QR payload: %s", raw)
 	}
 }
 
-// An unpaired cache with no QR yet yields the generating-code envelope and
-// omits qr_payload.
-func TestPairingStatus_AwaitingQRGenerating(t *testing.T) {
+// An unpaired cache tells the model how the operator pairs, without a QR.
+func TestPairingStatus_AwaitingPairingPointsAtCLI(t *testing.T) {
 	env := callPairingStatus(t, NewServer(nil, fakePairCache{}, false))
-	if env["state"] != "awaiting_qr" {
-		t.Fatalf("state = %v, want awaiting_qr", env["state"])
+	if env["state"] != "awaiting_pairing" {
+		t.Fatalf("state = %v, want awaiting_pairing", env["state"])
 	}
 	if _, ok := env["qr_payload"]; ok {
 		t.Errorf("qr_payload should be absent, got %v", env["qr_payload"])
 	}
-	if env["detail"] != "Generating pairing code…" {
-		t.Errorf("detail = %v, want generating message", env["detail"])
+	if detail, _ := env["detail"].(string); !strings.Contains(detail, "wpp-mcp pair") {
+		t.Errorf("detail = %v, want the operator pairing command", env["detail"])
 	}
 }
 
 // An unpaired cache whose pairing session expired keeps the awaiting_qr state
 // (supervisors switch on it) and flags expired so the caller knows the QR
 // will not appear until a new session starts.
-func TestPairingStatus_AwaitingQRExpired(t *testing.T) {
+func TestPairingStatus_AwaitingPairingExpired(t *testing.T) {
 	env := callPairingStatus(t, NewServer(nil, fakePairCache{expired: true}, false))
-	if env["state"] != "awaiting_qr" {
-		t.Fatalf("state = %v, want awaiting_qr", env["state"])
+	if env["state"] != "awaiting_pairing" {
+		t.Fatalf("state = %v, want awaiting_pairing", env["state"])
 	}
 	if env["expired"] != true {
 		t.Errorf("expired = %v, want true", env["expired"])

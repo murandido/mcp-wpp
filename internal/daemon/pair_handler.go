@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,8 @@ type pairHandlers struct {
 	pairQRLimiter    *Limiter
 	pairResetLimiter *Limiter
 	pairCodeLimiter  *Limiter
+	// pairCodeHourLimiter caps code requests per hour (page and CLI).
+	pairCodeHourLimiter *Limiter
 
 	// CSRF protection for the reset endpoint.
 	csrfMu    sync.Mutex
@@ -92,7 +95,9 @@ func newPairHandlers(cache *PairCache, reset resetter, coder pairCoder) *pairHan
 		pairQRLimiter:    NewLimiter(15.0/60.0, 10), // 15/min, burst 10
 		pairResetLimiter: NewLimiter(1.0/60.0, 1),   // 1/min, burst 1
 		pairCodeLimiter:  NewLimiter(3.0/60.0, 1),   // 3/min, burst 1; WhatsApp limits code requests server-side too
-		readyTimeout:     pairReadyTimeout,
+		// 5/hour: repeated code requests can get the number blocked from linking.
+		pairCodeHourLimiter: NewLimiter(5.0/3600.0, 5),
+		readyTimeout:        pairReadyTimeout,
 	}
 }
 
@@ -131,6 +136,7 @@ func (h *pairHandlers) mount(mux *http.ServeMux) {
 	mux.HandleFunc("/pair/qr.png", h.handlePairQR)
 	mux.HandleFunc("/pair/reset", h.handlePairReset)
 	mux.HandleFunc("/pair/code", h.handlePairCode)
+	h.mountAdmin(mux)
 }
 
 func (h *pairHandlers) handlePairPage(w http.ResponseWriter, r *http.Request) {
@@ -240,8 +246,8 @@ func (h *pairHandlers) handlePairCode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	if !h.pairCodeLimiter.Allow() {
-		w.Header().Set("Retry-After", "20")
+	if ok, retry := h.allowCode(); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}

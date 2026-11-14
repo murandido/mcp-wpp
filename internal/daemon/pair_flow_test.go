@@ -102,7 +102,7 @@ func TestPairFlow_PageLoadRestartsExpiredSession(t *testing.T) {
 	if !strings.Contains(body, "pairing session expired") {
 		t.Fatalf("auto-refresh page should report the expiry, got %s", body)
 	}
-	if strings.Contains(body, `http-equiv="refresh"`) {
+	if strings.Contains(body, "data-refresh-url") {
 		t.Fatal("expired page must not keep auto-refreshing")
 	}
 	if got := drv.starts.Load(); got != 1 {
@@ -114,7 +114,7 @@ func TestPairFlow_PageLoadRestartsExpiredSession(t *testing.T) {
 	if strings.Contains(body, "pairing session expired") {
 		t.Fatalf("a new session should be starting, got %s", body)
 	}
-	if !strings.Contains(body, `<img src="/pair/qr.png"`) || !strings.Contains(body, "url=/pair?auto=1") {
+	if !strings.Contains(body, `<img src="/pair/qr.png"`) || !strings.Contains(body, `data-refresh-url="/pair?auto=1"`) {
 		t.Fatalf("waiting page should show the QR and auto-refresh, got %s", body)
 	}
 	waitFor(t, func() bool { return drv.starts.Load() == 2 }, "page load restarted pairing")
@@ -245,7 +245,7 @@ func TestPairFlow_RestartIsRateLimited(t *testing.T) {
 	if !strings.Contains(body, "can start in 30 seconds") {
 		t.Fatalf("page should say when a new session can start, got %s", body)
 	}
-	if strings.Contains(body, `http-equiv="refresh"`) {
+	if strings.Contains(body, "data-refresh-url") {
 		t.Fatal("rate-limited page must not auto-refresh")
 	}
 	var backoff *pairBackoffError

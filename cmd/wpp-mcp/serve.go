@@ -154,10 +154,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	// to the MCP server (so pairing_status can surface the live QR), then
 	// mount the MCP HTTP handler back onto the daemon.
 	d, err := daemon.New(daemon.Config{
-		Addr:         addr,
-		Driver:       drv,
-		AuthToken:    authToken,
-		AllowedHosts: mcpsrv.ParseToolList(allowedHosts),
+		Addr:          addr,
+		Driver:        drv,
+		AuthToken:     authToken,
+		AllowedHosts:  mcpsrv.ParseToolList(allowedHosts),
+		AutoPairPhone: os.Getenv("WPP_MCP_PAIR_PHONE"),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon.New: %v\n", err)

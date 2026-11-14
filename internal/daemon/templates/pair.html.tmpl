@@ -1,24 +1,49 @@
 <!doctype html>
-<html><head>
-<meta charset="utf-8">
-{{if not (or .Expired .RetryIn)}}<meta http-equiv="refresh" content="5;url=/pair?auto=1">{{end}}
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pair WhatsApp</title>
-<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem}</style>
-</head><body>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#57534e;--card:#fff;--line:#e7e5e4;--accent:#15803d}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--card:#292524;--line:#44403c;--accent:#4ade80}}
+*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:56rem;margin:3rem auto;padding:0 1rem;line-height:1.5}
+h1{font-size:1.5rem;margin:0 0 .25rem}p.lead{color:var(--muted);margin:0 0 1.5rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:.75rem;padding:1.25rem}
+.card h2{font-size:1.05rem;margin:0 0 .5rem}.card ol{padding-left:1.2rem;margin:.5rem 0;color:var(--muted)}
+img.qr{width:100%;max-width:16rem;background:#fff;padding:.5rem;border-radius:.5rem}
+input,button{font:inherit;padding:.55rem .75rem;border-radius:.5rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+button{background:var(--accent);color:#fff;border:0;margin-top:.5rem;cursor:pointer;font-weight:600}
+code.big{font-size:2.2rem;letter-spacing:.25rem;font-weight:700;display:inline-block;padding:.5rem 1rem;border:2px dashed var(--accent);border-radius:.5rem}
+small,.muted{color:var(--muted)}a{color:var(--accent)}
+</style>
+</head><body{{if not (or .Expired .RetryIn)}} data-refresh-url="/pair?auto=1"{{end}}>
 <h1>Pair WhatsApp</h1>
+<p class="lead">Link this wpp-mcp daemon to your account as a linked device. Use either method.</p>
+<div class="grid">
+<section class="card">
+<h2>Pairing code</h2>
+<ol><li>Enter your number with the country code.</li><li>On your phone: <em>Settings</em> &rarr; <em>Linked devices</em> &rarr; <em>Link a device</em> &rarr; <em>Link with phone number instead</em>.</li><li>Type the 8-character code.</li></ol>
+<form method="post" action="/pair/code">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input id="phone" type="tel" name="phone" placeholder="+55 11 99999-9999" inputmode="tel" autocomplete="tel" required>
+<button type="submit">Get pairing code</button>
+</form>
+<p><small>From a terminal: <code>wpp-mcp pair -phone +&lt;number&gt;</code></small></p>
+</section>
+<section class="card">
+<h2>QR code</h2>
 {{if or .Expired .RetryIn}}
 <p><strong>The pairing session expired.</strong> WhatsApp closes an unused pairing session after a few minutes.</p>
 {{if .RetryIn}}<p>A new session can start in {{.RetryIn}} seconds: reload this page then.</p>{{else}}<p><a href="/pair">Start a new pairing session</a></p>{{end}}
 {{else}}
-<p>Open WhatsApp on your phone &rarr; <em>Settings</em> &rarr; <em>Linked Devices</em> &rarr; <em>Link a Device</em>, then scan:</p>
-<p><img src="/pair/qr.png" alt="WhatsApp pairing QR"></p>
-<p><small>This page auto-refreshes every 5 seconds while the QR rotates.</small></p>
+<p class="muted">On your phone: <em>Settings</em> &rarr; <em>Linked devices</em> &rarr; <em>Link a device</em>, then scan.</p>
+<img src="/pair/qr.png" class="qr" alt="WhatsApp pairing QR">
+<p><small>The QR rotates; this page refreshes every 5 seconds unless you are typing a number.</small></p>
 {{end}}
-<hr>
-<p>Or pair without scanning: enter your phone number (country code first) and type the code into WhatsApp via <em>Link with phone number instead</em>.</p>
-<form method="post" action="/pair/code">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<input type="text" name="phone" placeholder="+919876543210" inputmode="tel" required>
-<button type="submit">Get pairing code</button>
-</form>
+</section>
+</div>
+<script>
+(function(){var u=document.body.dataset.refreshUrl;if(!u)return;var p=document.getElementById("phone");
+setInterval(function(){if(p&&(p.value||document.activeElement===p))return;location.replace(u)},5000)})();
+</script>
 </body></html>

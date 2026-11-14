@@ -1,17 +1,31 @@
 <!doctype html>
-<html><head>
-<meta charset="utf-8">
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WhatsApp pairing code</title>
-<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem}
-code{font-size:2rem;letter-spacing:0.2rem;background:#f0f0f0;padding:0.5rem 1rem;display:inline-block;border-radius:0.5rem}</style>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#57534e;--card:#fff;--line:#e7e5e4;--accent:#15803d}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--card:#292524;--line:#44403c;--accent:#4ade80}}
+*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:56rem;margin:3rem auto;padding:0 1rem;line-height:1.5}
+h1{font-size:1.5rem;margin:0 0 .25rem}p.lead{color:var(--muted);margin:0 0 1.5rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:.75rem;padding:1.25rem}
+.card h2{font-size:1.05rem;margin:0 0 .5rem}.card ol{padding-left:1.2rem;margin:.5rem 0;color:var(--muted)}
+img.qr{width:100%;max-width:16rem;background:#fff;padding:.5rem;border-radius:.5rem}
+input,button{font:inherit;padding:.55rem .75rem;border-radius:.5rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+button{background:var(--accent);color:#fff;border:0;margin-top:.5rem;cursor:pointer;font-weight:600}
+code.big{font-size:2.2rem;letter-spacing:.25rem;font-weight:700;display:inline-block;padding:.5rem 1rem;border:2px dashed var(--accent);border-radius:.5rem}
+small,.muted{color:var(--muted)}a{color:var(--accent)}
+</style>
 </head><body>
-<h1>Pair with phone number</h1>
+<h1>Pair with a phone number</h1>
 {{if .Code}}
-<p>On your phone: <em>Settings</em> &rarr; <em>Linked Devices</em> &rarr; <em>Link a Device</em> &rarr; <em>Link with phone number instead</em>, then enter:</p>
-<p><code>{{.Code}}</code></p>
-<p><small>The code expires shortly; request a new one if it lapses. This page does not auto-refresh.</small></p>
+<section class="card">
+<p>On your phone: <em>Settings</em> &rarr; <em>Linked devices</em> &rarr; <em>Link a device</em> &rarr; <em>Link with phone number instead</em>, then enter:</p>
+<p><code class="big">{{.Code}}</code></p>
+<p><small>Expires in about <span id="left">180</span> seconds. <a href="/pair">Request a new code</a> if it lapses.</small></p>
+</section>
+<script>(function(){var n=180,e=document.getElementById("left");var t=setInterval(function(){n--;e.textContent=Math.max(n,0);if(n<=0)clearInterval(t)},1000)})();</script>
 {{else}}
-<p><strong>{{.Message}}</strong></p>
-<p><a href="/pair">Back to QR pairing</a></p>
+<section class="card"><p><strong>{{.Message}}</strong></p><p><a href="/pair">Back to pairing</a></p></section>
 {{end}}
 </body></html>

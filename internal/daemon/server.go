@@ -55,6 +55,10 @@ type Config struct {
 	MCPMount     func(mux *http.ServeMux)
 	AuthToken    string
 	AllowedHosts []string
+	// AutoPairPhone, when set and the device is unpaired at startup, makes
+	// the daemon request a pairing code for this number once and print it
+	// to stderr (headless and container setups).
+	AutoPairPhone string
 	// AdminMount, if non-nil, registers extra operator endpoints. They are
 	// served under /admin/* (bearer only) or as browser pages.
 	AdminMount func(mux *http.ServeMux)
@@ -176,6 +180,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.bootDriver(ctx); err != nil {
 		_ = httpSrv.Shutdown(context.Background())
 		return fmt.Errorf("boot driver: %w", err)
+	}
+	if s.cfg.AutoPairPhone != "" && !s.cache.Paired() {
+		go autoPair(ctx, handlers, s.cfg.AutoPairPhone)
 	}
 
 	// Wait for cancellation or a listener failure.

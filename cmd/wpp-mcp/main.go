@@ -32,7 +32,8 @@ Commands:
   open-ui      Print a single-use browser login link for the /pair page
   keygen       Create a new encryption key file (back it up!)
   encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
-  login        Pair this device (QR in the terminal, or -phone for a pairing code); daemon must be stopped
+  pair         Link WhatsApp: -phone +<number> for a pairing code, or a QR in the terminal
+  login        Pair directly without a daemon (pair falls back to this automatically)
   healthcheck  Probe local daemon readiness (for container health checks)
   smoke        Non-interactive boot check (CI)
   help         Show this help
@@ -112,6 +113,8 @@ func main() {
 	cmd, rest := args[0], args[1:]
 	var code int
 	switch cmd {
+	case "pair":
+		code = runPair(storeDir, redactor, rest)
 	case "login":
 		code = runLogin(storeDir, redactor, rest)
 	case "serve":
