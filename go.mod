@@ -6,7 +6,7 @@ toolchain go1.26.11
 
 require (
 	github.com/mark3labs/mcp-go v1.3.0
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/mdp/qrterminal v1.0.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20261031222104-5d4657a5c29e
