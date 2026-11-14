@@ -11,11 +11,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/murandido/mcp-wpp/internal/client"
 	"github.com/murandido/mcp-wpp/internal/daemon"
 	mcpsrv "github.com/murandido/mcp-wpp/internal/mcp"
+	"github.com/murandido/mcp-wpp/internal/ratelimit"
 	"github.com/murandido/mcp-wpp/internal/security"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
@@ -24,32 +26,46 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	var (
 		addr          string
 		allowRemote   bool
-		readOnly      bool
+		write         bool
 		labelsEnabled bool
+		allowedHosts  string
+		tools         string
+		disableTools  string
+		maxPerHour    int
 	)
-	if value := os.Getenv("WPP_MCP_READ_ONLY"); value != "" {
-		var err error
-		readOnly, err = strconv.ParseBool(value)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "WPP_MCP_READ_ONLY must be a boolean (for example, 1 or 0)")
-			return 2
+	for _, b := range []struct {
+		env string
+		dst *bool
+	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}} {
+		if value := os.Getenv(b.env); value != "" {
+			v, err := strconv.ParseBool(value)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s must be a boolean (for example, 1 or 0)\n", b.env)
+				return 2
+			}
+			*b.dst = v
 		}
 	}
-	if value := os.Getenv("WPP_MCP_LABELS"); value != "" {
-		var err error
-		labelsEnabled, err = strconv.ParseBool(value)
+	maxPerHour = ratelimit.DefaultConfig().MaxSendsPerHour
+	if value := os.Getenv("WPP_MCP_MAX_SENDS_PER_HOUR"); value != "" {
+		v, err := strconv.Atoi(value)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "WPP_MCP_LABELS must be a boolean (for example, 1 or 0)")
+			fmt.Fprintln(os.Stderr, "WPP_MCP_MAX_SENDS_PER_HOUR must be an integer")
 			return 2
 		}
+		maxPerHour = v
 	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.StringVar(&addr, "addr", "", "HTTP bind address (default: 127.0.0.1:8765, env WPP_MCP_ADDR)")
+	fs.StringVar(&addr, "addr", "", "listen address: host:port or unix:/path.sock (default 127.0.0.1:8765, env WPP_MCP_ADDR)")
 	fs.BoolVar(&allowRemote, "allow-remote", false, "allow binding to a non-loopback address")
+	fs.StringVar(&allowedHosts, "allowed-host", os.Getenv("WPP_MCP_ALLOWED_HOSTS"), "extra comma-separated Host/Origin values to accept, e.g. a reverse proxy hostname (env WPP_MCP_ALLOWED_HOSTS)")
 	fullHistoryFlag := registerFullHistory(fs)
-	fs.BoolVar(&readOnly, "read-only", readOnly, "exclude tools that send or mutate WhatsApp (env WPP_MCP_READ_ONLY)")
+	fs.BoolVar(&write, "write", write, "expose tools that send messages or change the WhatsApp account (env WPP_MCP_WRITE); default is read-only")
 	fs.BoolVar(&labelsEnabled, "enable-labels", labelsEnabled, "enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)")
+	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
+	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
+	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -58,6 +74,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", fullHistoryErr)
 		return 2
 	}
+	if maxPerHour < 1 {
+		fmt.Fprintln(os.Stderr, "-max-sends-per-hour must be at least 1")
+		return 2
+	}
+	selection := &mcpsrv.ToolSelection{Enable: mcpsrv.ParseToolList(tools), Disable: mcpsrv.ParseToolList(disableTools)}
 
 	addr = resolveAddr(addr)
 	if !allowRemote && !isLoopbackAddr(addr) {
@@ -65,16 +86,10 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		return 2
 	}
 
-	// When binding to a non-loopback address we require a shared bearer
-	// token. Loopback-only operation intentionally keeps no token so local
-	// editors and curl can hit the daemon without extra setup.
-	var authToken string
-	if allowRemote {
-		authToken = os.Getenv("WPP_MCP_TOKEN")
-		if authToken == "" {
-			fmt.Fprintln(os.Stderr, "-allow-remote requires WPP_MCP_TOKEN to be set in the environment")
-			return 2
-		}
+	authToken, err := daemon.ResolveToken(os.Getenv("WPP_MCP_TOKEN"), tokenPath(storeDir), true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "token: %v\n", err)
+		return 1
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -111,7 +126,14 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 	defer st.Close()
 
+	limits := ratelimit.DefaultConfig()
+	limits.MaxSendsPerHour = maxPerHour
+	if limits.NonContactMaxPerHour > maxPerHour {
+		limits.NonContactMaxPerHour = maxPerHour
+	}
+
 	c, err := client.New(ctx, client.Config{
+		RateLimiter:      ratelimit.New(limits),
 		StoreDir:         storeDir,
 		Store:            st,
 		Logger:           client.NewStderrLogger("Client", "INFO", false),
@@ -131,30 +153,39 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	// to the MCP server (so pairing_status can surface the live QR), then
 	// mount the MCP HTTP handler back onto the daemon.
 	d, err := daemon.New(daemon.Config{
-		Addr:      addr,
-		Driver:    drv,
-		AuthToken: authToken,
+		Addr:         addr,
+		Driver:       drv,
+		AuthToken:    authToken,
+		AllowedHosts: mcpsrv.ParseToolList(allowedHosts),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon.New: %v\n", err)
 		return 1
 	}
 
-	var mcpServer *mcpsrv.Server
-	if readOnly {
-		mcpServer = mcpsrv.NewReadOnlyServer(c, d.Cache(), labelsEnabled)
-		fmt.Fprintln(os.Stderr, "read-only mode: WhatsApp mutation tools are disabled; /pair remains available to the operator")
-	} else {
-		mcpServer = mcpsrv.NewServer(c, d.Cache(), labelsEnabled)
+	mcpServer, err := mcpsrv.NewServerWithOptions(c, d.Cache(), mcpsrv.Options{
+		ReadOnly:      !write,
+		LabelsEnabled: labelsEnabled,
+		Tools:         selection,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tools: %v\n", err)
+		return 2
 	}
+	if write {
+		fmt.Fprintln(os.Stderr, "write mode: tools that send messages or change the account are enabled")
+	} else {
+		fmt.Fprintln(os.Stderr, "read-only mode (default): pass -write to enable sending")
+	}
+	fmt.Fprintf(os.Stderr, "tools (%d): %s\n", len(mcpServer.ToolNames()), strings.Join(mcpServer.ToolNames(), ", "))
 	if labelsEnabled {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
 	d.SetMCPMount(mcpServer.AttachHTTP)
 
-	fmt.Fprintf(os.Stderr, "wpp-mcp listening on http://%s (MCP at /mcp, pairing at /pair)\n", addr)
+	fmt.Fprintf(os.Stderr, "wpp-mcp listening on %s (MCP at /mcp; bearer token in %s)\n", displayAddr(addr), tokenPath(storeDir))
 	if !c.IsLoggedIn() {
-		fmt.Fprintf(os.Stderr, "unpaired: open http://%s/pair to scan QR\n", addr)
+		fmt.Fprintln(os.Stderr, "unpaired: run `wpp-mcp pair -phone +<number>` or `wpp-mcp open-ui` for the QR page")
 	}
 	if err := d.Run(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "daemon: %v\n", err)
@@ -179,6 +210,9 @@ func resolveAddr(flagValue string) string {
 // addresses must be loopback for the check to pass. Non-loopback binds
 // require -allow-remote.
 func isLoopbackAddr(addr string) bool {
+	if strings.HasPrefix(addr, "unix:") {
+		return true
+	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return false

@@ -27,8 +27,8 @@ func TestIsLoopbackAddr(t *testing.T) {
 	}
 }
 
-func TestRunServe_RejectsInvalidReadOnlyEnvironment(t *testing.T) {
-	t.Setenv("WPP_MCP_READ_ONLY", "invalid")
+func TestRunServe_RejectsInvalidWriteEnvironment(t *testing.T) {
+	t.Setenv("WPP_MCP_WRITE", "invalid")
 	output, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
@@ -44,8 +44,8 @@ func TestRunServe_RejectsInvalidReadOnlyEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != 2 || !strings.Contains(string(raw), "WPP_MCP_READ_ONLY") {
-		t.Fatalf("invalid read-only config: code %d, stderr %s", code, raw)
+	if code != 2 || !strings.Contains(string(raw), "WPP_MCP_WRITE") {
+		t.Fatalf("invalid write config: code %d, stderr %s", code, raw)
 	}
 }
 

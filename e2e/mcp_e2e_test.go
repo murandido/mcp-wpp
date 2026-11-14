@@ -12,7 +12,7 @@ import (
 )
 
 func TestHTTP_ListTools(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, "-write")
 	h.initializeMCP()
 
 	body := map[string]any{
@@ -25,7 +25,7 @@ func TestHTTP_ListTools(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "http://"+h.addr+"/mcp", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.do(req)
 	if err != nil {
 		t.Fatalf("POST tools/list: %v", err)
 	}
@@ -59,12 +59,13 @@ func TestHTTP_ReadOnlyMode(t *testing.T) {
 		args      []string
 		want      bool
 	}{
-		{"flag", "", []string{"-read-only"}, true},
-		{"environment", "1", nil, true},
-		{"explicit_disable", "1", []string{"-read-only=false"}, false},
+		{"default", "", nil, true},
+		{"flag", "", []string{"-write"}, false},
+		{"environment", "1", nil, false},
+		{"explicit_disable", "1", []string{"-write=false"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("WPP_MCP_READ_ONLY", tc.env)
+			t.Setenv("WPP_MCP_WRITE", tc.env)
 			h := newHarness(t, tc.args...)
 			h.initializeMCP()
 			result := h.callTool("get_status", map[string]any{})
@@ -91,7 +92,7 @@ func TestHTTP_ReadOnlyMode(t *testing.T) {
 
 func TestHTTP_TranscriptionNotConfigured(t *testing.T) {
 	t.Setenv("WPP_MCP_TRANSCRIBE_URL", "")
-	h := newHarness(t)
+	h := newHarness(t, "-write")
 	h.initializeMCP()
 	result := h.callTool("transcribe_audio", map[string]any{
 		"message_id": "AUDIO-1",
@@ -107,7 +108,7 @@ func TestHTTP_TranscriptionNotConfigured(t *testing.T) {
 // protocol version rides in _meta and the Mcp-Protocol-Version header. It
 // discovers, lists and calls a tool.
 func TestHTTP_Stateless2026(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, "-write")
 	meta := map[string]any{
 		"io.modelcontextprotocol/protocolVersion":    "2026-07-28",
 		"io.modelcontextprotocol/clientCapabilities": map[string]any{},
@@ -129,7 +130,7 @@ func TestHTTP_Stateless2026(t *testing.T) {
 		if method == "tools/call" {
 			req.Header.Set("Mcp-Name", "list_chats")
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := h.do(req)
 		if err != nil {
 			t.Fatalf("POST %s: %v", method, err)
 		}

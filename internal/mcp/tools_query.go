@@ -247,7 +247,6 @@ func (s *Server) registerIsOnWhatsApp() {
 		if len(a.Phones) == 0 {
 			return mcp.NewToolResultError("phones must not be empty"), nil
 		}
-		ctx = withRateLimitOverride(ctx, req)
 		m, err := s.client.IsOnWhatsApp(ctx, a.Phones)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil

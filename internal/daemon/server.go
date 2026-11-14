@@ -2,12 +2,13 @@ package daemon
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -37,14 +38,26 @@ type pairDriver interface {
 // mux is being built so the caller can attach additional handlers (in
 // practice, the /mcp Streamable HTTP handler from internal/mcp).
 //
-// AuthToken, if non-empty, gates /mcp and /pair/* behind the HTTP header
-// `Authorization: Bearer <token>`. Loopback-bound operation passes an
-// empty token and leaves these routes unauthenticated.
+// Addr may also be "unix:/path/to.sock" to listen on a Unix socket, which is
+// created with mode 0600.
+//
+// AuthToken is required. /mcp and /admin/* accept only
+// `Authorization: Bearer <token>`; browser pages accept the bearer token or
+// a session cookie minted through /admin/ui-login → /ui/login. Only /healthz,
+// /readyz and /ui/login are public.
+//
+// AllowedHosts extends the Host/Origin allowlist beyond loopback names, for
+// example the public hostname of an HTTPS reverse proxy. Entries are a bare
+// hostname (any port) or host:port.
 type Config struct {
-	Addr      string
-	Driver    pairDriver
-	MCPMount  func(mux *http.ServeMux)
-	AuthToken string
+	Addr         string
+	Driver       pairDriver
+	MCPMount     func(mux *http.ServeMux)
+	AuthToken    string
+	AllowedHosts []string
+	// AdminMount, if non-nil, registers extra operator endpoints. They are
+	// served under /admin/* (bearer only) or as browser pages.
+	AdminMount func(mux *http.ServeMux)
 }
 
 // Server is the long-lived daemon process. Safe for a single Run call.
@@ -66,6 +79,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.Driver == nil {
 		return nil, errors.New("daemon.New: Driver required")
+	}
+	if len(cfg.AuthToken) < 16 {
+		return nil, errors.New("daemon.New: AuthToken of at least 16 characters required")
 	}
 	cache := NewPairCache()
 	return &Server{
@@ -128,9 +144,15 @@ func (s *Server) Run(ctx context.Context) error {
 		})
 	}
 
-	rootHandler := authMiddleware(mux, s.cfg.AuthToken)
+	ui := newUIAuth()
+	ui.mount(mux)
+	if s.cfg.AdminMount != nil {
+		s.cfg.AdminMount(mux)
+	}
 
-	ln, err := net.Listen("tcp", s.cfg.Addr)
+	rootHandler := hostGuard(authGuard(securityHeaders(mux), s.cfg.AuthToken, ui), s.cfg.AllowedHosts)
+
+	ln, err := listen(s.cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -207,30 +229,41 @@ func (s *Server) onLoggedOut() func() {
 	}
 }
 
-func authMiddleware(next http.Handler, token string) http.Handler {
-	if token == "" {
-		return next
-	}
-	expected := []byte("Bearer " + token)
+// securityHeaders sets conservative defaults on every response.
+func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if requiresAuth(r.URL.Path) {
-			got := r.Header.Get("Authorization")
-			if subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="wpp-mcp"`)
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-		}
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
 }
 
-func requiresAuth(path string) bool {
-	if path == "/mcp" || strings.HasPrefix(path, "/mcp/") {
-		return true
+// listen opens a TCP listener, or a Unix socket for "unix:/path" addresses.
+func listen(addr string) (net.Listener, error) {
+	path, ok := strings.CutPrefix(addr, "unix:")
+	if !ok {
+		return net.Listen("tcp", addr)
 	}
-	if path == "/pair" || strings.HasPrefix(path, "/pair/") {
-		return true
+	if path == "" {
+		return nil, errors.New("unix socket path is empty")
 	}
-	return false
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	// A stale socket from a crashed run would make bind fail. The store lock
+	// already guarantees no other daemon owns this path.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSocket != 0 {
+		_ = os.Remove(path)
+	}
+	ln, err := withPrivateUmask(func() (net.Listener, error) { return net.Listen("unix", path) })
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		ln.Close()
+		return nil, fmt.Errorf("chmod socket: %w", err)
+	}
+	return ln, nil
 }

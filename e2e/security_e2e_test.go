@@ -8,7 +8,7 @@ import (
 )
 
 func TestSendFileRejectsOutOfRootPath(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, "-write")
 	h.initializeMCP()
 
 	res := h.callTool("send_file", map[string]any{

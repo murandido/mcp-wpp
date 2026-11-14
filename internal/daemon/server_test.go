@@ -110,8 +110,9 @@ func waitFor(t *testing.T, pred func() bool, msg string) {
 func newTestServer(t *testing.T, drv pairDriver) *Server {
 	t.Helper()
 	s, err := New(Config{
-		Addr:   "127.0.0.1:0",
-		Driver: drv,
+		Addr:      "127.0.0.1:0",
+		Driver:    drv,
+		AuthToken: testToken,
 	})
 	if err != nil {
 		t.Fatalf("daemon.New: %v", err)
@@ -160,7 +161,7 @@ func TestServer_AuthTokenGatesMCPAndPair(t *testing.T) {
 	s, err := New(Config{
 		Addr:      "127.0.0.1:0",
 		Driver:    drv,
-		AuthToken: "secret123",
+		AuthToken: testToken,
 	})
 	if err != nil {
 		t.Fatalf("daemon.New: %v", err)
@@ -172,7 +173,7 @@ func TestServer_AuthTokenGatesMCPAndPair(t *testing.T) {
 	base := "http://" + s.BoundAddr()
 
 	// /mcp without Authorization -> 401.
-	resp, err := http.Get(base + "/mcp")
+	resp, err := rawClient.Get(base + "/mcp")
 	if err != nil {
 		t.Fatalf("GET /mcp: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestServer_AuthTokenGatesMCPAndPair(t *testing.T) {
 	}
 
 	// /pair without Authorization -> 401.
-	resp, err = http.Get(base + "/pair")
+	resp, err = rawClient.Get(base + "/pair")
 	if err != nil {
 		t.Fatalf("GET /pair: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestServer_AuthTokenGatesMCPAndPair(t *testing.T) {
 	// cache paired synchronously because IsLoggedIn starts true).
 	waitFor(t, func() bool { return s.Cache().Paired() }, "initial paired flag set")
 	req, _ := http.NewRequest(http.MethodGet, base+"/pair", nil)
-	req.Header.Set("Authorization", "Bearer secret123")
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("authorised GET /pair: %v", err)

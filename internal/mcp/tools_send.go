@@ -47,7 +47,6 @@ func (s *Server) registerSendMessage() {
 		if a.Recipient == "" {
 			return mcp.NewToolResultError("recipient must be provided"), nil
 		}
-		ctx = withRateLimitOverride(ctx, req)
 		r := s.client.Send(ctx, a.Recipient, a.Message)
 		s.maybeMarkChatRead(ctx, r, a.Recipient, a.MarkChatRead)
 		return resultJSON(r)
@@ -85,7 +84,6 @@ func (s *Server) registerSendFile() {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		ctx = withRateLimitOverride(ctx, req)
 		r := s.client.SendMediaWithOptions(ctx, client.SendMediaOptions{
 			Recipient: a.Recipient,
 			Caption:   a.Caption,
@@ -122,7 +120,6 @@ func (s *Server) registerSendAudioMessage() {
 		if a.Recipient == "" || a.MediaPath == "" {
 			return mcp.NewToolResultError("recipient and media_path are required"), nil
 		}
-		ctx = withRateLimitOverride(ctx, req)
 		safePath, err := s.client.ValidateMediaPath(a.MediaPath)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -168,7 +165,6 @@ func (s *Server) registerSendReaction() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendReactionArgs) (*mcp.CallToolResult, error) {
-		ctx = withRateLimitOverride(ctx, req)
 		if err := s.client.SendReaction(ctx, a.ChatJID, a.MessageID, a.SenderJID, a.Emoji); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -198,7 +194,6 @@ func (s *Server) registerSendReply() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendReplyArgs) (*mcp.CallToolResult, error) {
-		ctx = withRateLimitOverride(ctx, req)
 		if err := s.client.SendReply(ctx, a.ChatJID, a.TargetMessageID, a.TargetSenderJID, a.Body); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

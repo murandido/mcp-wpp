@@ -19,31 +19,39 @@ import (
 // Version is overridden at build time via -ldflags "-X main.Version=...".
 var Version = "dev"
 
-const usage = `wpp-mcp: WhatsApp bridge over MCP
+const usage = `wpp-mcp: a hardened WhatsApp MCP server
 
 Usage:
-  wpp-mcp <command> [flags]
+  wpp-mcp [global flags] <command> [flags]
   wpp-mcp -version
 
 Commands:
-  login   Pair this device with your WhatsApp account via QR code (terminal)
-  serve   Run the always-on HTTP MCP daemon (tracks events + serves MCP on 127.0.0.1:8765)
-  smoke   Non-interactive boot check (CI): opens store + builds MCP server without connecting
+  serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
+  stdio        Bridge an MCP client over stdin/stdout to the running daemon
+  open-ui      Print a single-use browser login link for the /pair page
+  login        Pair this device (QR in the terminal, or -phone for a pairing code); daemon must be stopped
   healthcheck  Probe local daemon readiness (for container health checks)
-  help    Show this help
+  smoke        Non-interactive boot check (CI)
+  help         Show this help
 
 Global flags (before the command):
-  -store DIR   Directory holding messages.db and whatsapp.db (default: ./store)
+  -store DIR   Directory holding the databases and token (default ./store, env WPP_MCP_STORE)
   -debug       Show full JIDs, names and message bodies in logs (default: redacted)
   -version     Print version and exit
 
-Serve-specific flags (after 'serve'):
-  -addr host:port   HTTP bind address (default: 127.0.0.1:8765, env WPP_MCP_ADDR)
-  -allow-remote     Allow binding to a non-loopback address (dangerous)
-Pairing flag (after 'login' or 'serve'; only affects a new pairing):
-  -full-history     Ask the phone for a full history sync (env WPP_MCP_FULL_HISTORY)
-  -read-only        Exclude WhatsApp mutation tools (env WPP_MCP_READ_ONLY)
-  -enable-labels    Enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)
+serve flags:
+  -addr ADDR             host:port or unix:/path.sock (default 127.0.0.1:8765, env WPP_MCP_ADDR)
+  -allow-remote          Allow binding to a non-loopback address
+  -allowed-host LIST     Extra Host/Origin values to accept, e.g. a reverse proxy hostname
+  -write                 Expose tools that send or change the account (default: read-only)
+  -tools LIST            Tool groups or names to expose (default: core,messaging,transcribe,labels,access)
+  -disable-tools LIST    Tool groups or names to hide
+  -max-sends-per-hour N  Outbound send cap (default 30)
+  -enable-labels         Enable WhatsApp Business label sync and tools
+  -full-history          Ask the phone for a full history sync on a new pairing
+
+Every HTTP route except /healthz and /readyz requires the bearer token that
+serve stores in <store>/token (or WPP_MCP_TOKEN).
 `
 
 func main() {
@@ -69,7 +77,11 @@ func main() {
 	)
 	fs := flag.NewFlagSet("wpp-mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.StringVar(&storeDir, "store", "./store", "directory holding messages.db and whatsapp.db")
+	defaultStore := os.Getenv("WPP_MCP_STORE")
+	if defaultStore == "" {
+		defaultStore = "./store"
+	}
+	fs.StringVar(&storeDir, "store", defaultStore, "directory holding messages.db and whatsapp.db (env WPP_MCP_STORE)")
 	fs.BoolVar(&debug, "debug", false, "show full JIDs, names and message bodies in logs (default: redacted)")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
@@ -96,6 +108,10 @@ func main() {
 		code = runServe(storeDir, redactor, rest)
 	case "smoke":
 		code = runSmoke(storeDir, redactor, rest)
+	case "stdio":
+		code = runStdio(storeDir, rest)
+	case "open-ui":
+		code = runOpenUI(storeDir, rest)
 	case "healthcheck":
 		code = runHealthcheck(rest)
 	case "help", "-h", "--help":

@@ -36,7 +36,6 @@ func (s *Server) registerSendPoll() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendPollArgs) (*mcp.CallToolResult, error) {
-		ctx = withRateLimitOverride(ctx, req)
 		if r := requireNonEmpty("recipient", a.Recipient); r != nil {
 			return r, nil
 		}
@@ -72,7 +71,6 @@ func (s *Server) registerSendPollVote() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendPollVoteArgs) (*mcp.CallToolResult, error) {
-		ctx = withRateLimitOverride(ctx, req)
 		if r := requireNonEmpty("chat_jid", a.ChatJID); r != nil {
 			return r, nil
 		}
@@ -143,7 +141,6 @@ func (s *Server) registerSendContactCard() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendContactCardArgs) (*mcp.CallToolResult, error) {
-		ctx = withRateLimitOverride(ctx, req)
 		if r := requireNonEmpty("recipient", a.Recipient); r != nil {
 			return r, nil
 		}

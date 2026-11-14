@@ -21,9 +21,12 @@ import (
 // harness runs ./bin/wpp-mcp serve on an OS-assigned loopback port
 // and offers a typed MCP tool-call helper.
 type harness struct {
-	t    *testing.T
-	cmd  *exec.Cmd
-	addr string
+	t     *testing.T
+	cmd   *exec.Cmd
+	addr  string
+	store string
+	bin   string
+	token string
 }
 
 func newHarness(t *testing.T, serveArgs ...string) *harness {
@@ -52,7 +55,7 @@ func newHarness(t *testing.T, serveArgs ...string) *harness {
 		t.Fatalf("start daemon: %v", err)
 	}
 
-	h := &harness{t: t, cmd: cmd, addr: addr}
+	h := &harness{t: t, cmd: cmd, addr: addr, store: storeDir, bin: bin}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
 
 	h.waitForReady(5 * time.Second)
@@ -78,22 +81,34 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(wd)
 }
 
-// waitForReady polls /pair until it responds 200, or fails the test after d.
+// waitForReady polls the public /healthz probe, then loads the bearer token
+// serve generated in the store directory.
 func (h *harness) waitForReady(d time.Duration) {
 	h.t.Helper()
 	deadline := time.Now().Add(d)
-	url := "http://" + h.addr + "/pair"
+	url := "http://" + h.addr + "/healthz"
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url) //nolint:gosec
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
+				raw, err := os.ReadFile(filepath.Join(h.store, "token"))
+				if err != nil {
+					h.t.Fatalf("read daemon token: %v", err)
+				}
+				h.token = strings.TrimSpace(string(raw))
 				return
 			}
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 	h.t.Fatalf("daemon not ready on http://%s after %s", h.addr, d)
+}
+
+// do sends req with the daemon's bearer token.
+func (h *harness) do(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	return http.DefaultClient.Do(req)
 }
 
 // toolResult mirrors the MCP tool-call response shape we care about.
@@ -122,7 +137,7 @@ func (h *harness) callTool(name string, args map[string]any) toolResult {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+h.addr+"/mcp", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.do(req)
 	if err != nil {
 		h.t.Fatalf("POST /mcp: %v", err)
 	}
@@ -193,7 +208,7 @@ func (h *harness) initializeMCP() {
 	req, _ := http.NewRequest(http.MethodPost, "http://"+h.addr+"/mcp", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.do(req)
 	if err != nil {
 		h.t.Fatalf("initialize: %v", err)
 	}

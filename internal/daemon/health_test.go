@@ -17,7 +17,7 @@ func (d *healthDriver) IsConnected() bool { return d.connected.Load() }
 
 func TestPublicHealthAndReadiness(t *testing.T) {
 	d := &healthDriver{fakePairDriver: newFakePairDriver(true)}
-	s, err := New(Config{Addr: "127.0.0.1:0", Driver: d, AuthToken: "secret"})
+	s, err := New(Config{Addr: "127.0.0.1:0", Driver: d, AuthToken: testToken})
 	if err != nil {
 		t.Fatal(err)
 	}

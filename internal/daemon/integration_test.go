@@ -11,7 +11,7 @@ import (
 
 func TestIntegration_PairPageAccessibleOverHTTP(t *testing.T) {
 	drv := newFakePairDriver(false)
-	s, err := New(Config{Addr: "127.0.0.1:0", Driver: drv})
+	s, err := New(Config{Addr: "127.0.0.1:0", Driver: drv, AuthToken: testToken})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestIntegration_PairPageAccessibleOverHTTP(t *testing.T) {
 
 func TestIntegration_MCPEndpointReturns503WhenUnmounted(t *testing.T) {
 	drv := newFakePairDriver(true)
-	s, err := New(Config{Addr: "127.0.0.1:0", Driver: drv})
+	s, err := New(Config{Addr: "127.0.0.1:0", Driver: drv, AuthToken: testToken})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
