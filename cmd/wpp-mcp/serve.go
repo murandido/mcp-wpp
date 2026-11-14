@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/murandido/mcp-wpp/internal/client"
 	"github.com/murandido/mcp-wpp/internal/daemon"
@@ -32,6 +33,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		tools         string
 		disableTools  string
 		maxPerHour    int
+		retainDays    int
 	)
 	for _, b := range []struct {
 		env string
@@ -55,6 +57,14 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		}
 		maxPerHour = v
 	}
+	if value := os.Getenv("WPP_MCP_RETAIN_DAYS"); value != "" {
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "WPP_MCP_RETAIN_DAYS must be an integer")
+			return 2
+		}
+		retainDays = v
+	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&addr, "addr", "", "listen address: host:port or unix:/path.sock (default 127.0.0.1:8765, env WPP_MCP_ADDR)")
@@ -66,7 +76,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
 	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
+	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if retainDays < 0 {
+		fmt.Fprintln(os.Stderr, "-retain-days must be 0 or more")
 		return 2
 	}
 	fullHistory, fullHistoryErr := resolveFullHistory(fs, *fullHistoryFlag, os.Getenv)
@@ -185,6 +200,10 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
 	d.SetMCPMount(mcpServer.AttachHTTP)
+	if retainDays > 0 {
+		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)
+		go c.RunRetention(ctx, time.Duration(retainDays)*24*time.Hour)
+	}
 
 	fmt.Fprintf(os.Stderr, "wpp-mcp listening on %s (MCP at /mcp; bearer token in %s)\n", displayAddr(addr), tokenPath(storeDir))
 	if !c.IsLoggedIn() {

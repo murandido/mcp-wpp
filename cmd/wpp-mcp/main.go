@@ -55,6 +55,7 @@ serve flags:
   -tools LIST            Tool groups or names to expose (default: core,messaging,transcribe,labels,access)
   -disable-tools LIST    Tool groups or names to hide
   -max-sends-per-hour N  Outbound send cap (default 30)
+  -retain-days N         Delete cached messages and media older than N days (default 0: keep)
   -enable-labels         Enable WhatsApp Business label sync and tools
   -full-history          Ask the phone for a full history sync on a new pairing
 
