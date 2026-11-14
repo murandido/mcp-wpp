@@ -106,13 +106,22 @@ type Result struct {
 // Transcribe uploads the audio file at path to the service. language overrides
 // the configured default when non-empty.
 func Transcribe(ctx context.Context, cfg Config, path, language string) (Result, error) {
-	endpoint, err := cfg.endpoint()
-	if err != nil {
+	// Reject a disallowed endpoint before touching the audio.
+	if _, err := cfg.endpoint(); err != nil {
 		return Result{}, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Result{}, fmt.Errorf("transcription: read audio: %w", err)
+	}
+	return TranscribeData(ctx, cfg, data, filepath.Base(path), language)
+}
+
+// TranscribeData uploads in-memory audio; filename names the multipart part.
+func TranscribeData(ctx context.Context, cfg Config, data []byte, filename, language string) (Result, error) {
+	endpoint, err := cfg.endpoint()
+	if err != nil {
+		return Result{}, err
 	}
 	if len(data) == 0 {
 		return Result{}, errors.New("transcription: audio file is empty")
@@ -123,7 +132,7 @@ func Transcribe(ctx context.Context, cfg Config, path, language string) (Result,
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	fw, err := mw.CreateFormFile("file", filepath.Base(path))
+	fw, err := mw.CreateFormFile("file", filename)
 	if err != nil {
 		return Result{}, err
 	}

@@ -48,7 +48,7 @@ func transcribeFixture(t *testing.T, mediaType string, audio ...[]byte) (*Client
 	c.downloadMedia = func(context.Context, whatsmeow.DownloadableMessage) ([]byte, error) { return payload, nil }
 	c.transcribeCfg = transcribe.Config{URL: "http://127.0.0.1:1", Model: "small", MaxSeconds: 600}
 	calls := 0
-	c.transcribeFn = func(_ context.Context, _ transcribe.Config, path, lang string) (transcribe.Result, error) {
+	c.transcribeFn = func(_ context.Context, _ transcribe.Config, _ []byte, _, lang string) (transcribe.Result, error) {
 		calls++
 		return transcribe.Result{Text: "hola, soy " + lang, Language: "es", Duration: 2}, nil
 	}
@@ -98,7 +98,7 @@ func TestTranscribeAudio_RejectsNonAudioAndBadArgs(t *testing.T) {
 
 func TestTranscribeAudio_ServiceErrorIsNotCached(t *testing.T) {
 	c, _ := transcribeFixture(t, "audio")
-	c.transcribeFn = func(context.Context, transcribe.Config, string, string) (transcribe.Result, error) {
+	c.transcribeFn = func(context.Context, transcribe.Config, []byte, string, string) (transcribe.Result, error) {
 		return transcribe.Result{}, errors.New("backend down")
 	}
 	if _, _, err := c.TranscribeAudio(context.Background(), trMsg, trJID, ""); err == nil {

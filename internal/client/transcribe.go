@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/murandido/mcp-wpp/internal/media"
@@ -53,15 +53,19 @@ func (c *Client) TranscribeAudio(ctx context.Context, messageID, chatJID, langua
 	if dl.MediaType != "audio" {
 		return nil, false, fmt.Errorf("message is %q media, not audio", dl.MediaType)
 	}
-	if err := c.checkAudioDuration(dl.Path); err != nil {
+	audio, err := c.ReadMedia(dl.Path)
+	if err != nil {
+		return nil, false, fmt.Errorf("read audio: %w", err)
+	}
+	if err := c.checkAudioDuration(audio); err != nil {
 		return nil, false, err
 	}
 
 	fn := c.transcribeFn
 	if fn == nil {
-		fn = transcribe.Transcribe
+		fn = transcribe.TranscribeData
 	}
-	res, err := fn(ctx, c.transcribeCfg, dl.Path, language)
+	res, err := fn(ctx, c.transcribeCfg, audio, filepath.Base(dl.Path), language)
 	if err != nil {
 		return nil, false, err
 	}
@@ -86,11 +90,7 @@ func (c *Client) TranscribeAudio(ctx context.Context, messageID, chatJID, langua
 // checkAudioDuration rejects voice notes longer than the configured limit
 // before they are uploaded. Only Ogg/Opus (what WhatsApp voice notes use) can be
 // measured here; other formats are left to the service's own limit.
-func (c *Client) checkAudioDuration(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read audio: %w", err)
-	}
+func (c *Client) checkAudioDuration(data []byte) error {
 	if !bytes.HasPrefix(data, []byte("OggS")) {
 		return nil // Other formats use the service's duration limit.
 	}

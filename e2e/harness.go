@@ -47,6 +47,13 @@ func newHarness(t *testing.T, serveArgs ...string) *harness {
 		}
 	}
 
+	// Every e2e daemon runs encrypted, with its own throwaway key.
+	keyFile := filepath.Join(t.TempDir(), "key")
+	if out, err := exec.Command(bin, "-key-file", keyFile, "keygen").CombinedOutput(); err != nil {
+		t.Fatalf("keygen: %v: %s", err, out)
+	}
+	t.Setenv("WPP_MCP_KEY_FILE", keyFile)
+
 	args := append([]string{"-store", storeDir, "serve", "-addr", addr}, serveArgs...)
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = os.Stderr

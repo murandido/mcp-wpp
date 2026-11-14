@@ -144,8 +144,8 @@ func (c *Client) download(ctx context.Context, messageID, chatJID, outputPath st
 	// Short-circuit if we already have the file in cache. If output_path is
 	// set, copy it there from the cache and return the output path instead.
 	if _, statErr := os.Stat(localPath); statErr == nil {
-		if err := validateCachedMedia(localPath, fileLength, fileSHA256); err == nil {
-			return finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename)
+		if err := c.validateCacheFile(localPath, fileLength, fileSHA256); err == nil {
+			return c.finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename)
 		} else {
 			c.log.Warnf("Ignoring invalid cached media for message %s: %s", c.redactor.MsgID(messageID), c.redactor.Err(err))
 		}
@@ -210,12 +210,12 @@ func (c *Client) download(ctx context.Context, messageID, chatJID, outputPath st
 			c.log.Warnf("Failed to store re-uploaded media path for message %s: %s", c.redactor.MsgID(messageID), c.redactor.Err(err))
 		}
 	}
-	if err := replaceCacheFile(messageDir, localPath, data); err != nil {
+	if err := c.writeCacheFile(messageDir, localPath, data); err != nil {
 		return DownloadResult{Success: false, Message: fmt.Sprintf("failed to save media file: %v", err)}
 	}
 
 	c.log.Infof("Successfully downloaded %s media (%d bytes)", mediaType, len(data))
-	return finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename)
+	return c.finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename)
 }
 
 // fetchMedia downloads and decrypts the payload described by d.
@@ -292,10 +292,10 @@ func replaceCacheFile(dir, path string, data []byte) error {
 // and builds the success DownloadResult. Shared by the cache-hit and
 // fresh-download paths in Download, which differ only in the log line
 // emitted just before this call.
-func finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename string) DownloadResult {
+func (c *Client) finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename string) DownloadResult {
 	returnPath := absPath
 	if resolvedOutput != "" {
-		if err := placeAtOutput(localPath, resolvedOutput); err != nil {
+		if err := c.placeAtOutput(localPath, resolvedOutput); err != nil {
 			return DownloadResult{Success: false, Message: fmt.Sprintf("failed to write output_path: %v", err)}
 		}
 		returnPath = resolvedOutput
@@ -309,21 +309,21 @@ func finalizeDownload(localPath, absPath, resolvedOutput, mediaType, filename st
 	}
 }
 
-// placeAtOutput copies src to dst as an independent file; a hard link would
-// let writes through dst modify the cached file. O_EXCL never truncates,
-// replaces or follows an existing dst, and a failed copy removes the partial
-// file so the caller can retry the same path.
-func placeAtOutput(src, dst string) error {
-	in, err := os.Open(src)
+// placeAtOutput writes the plaintext of cache file src to dst as an
+// independent file (a hard link would let writes through dst modify the
+// cache, and with encryption the cache holds ciphertext). O_EXCL never
+// truncates, replaces or follows an existing dst, and a failed write removes
+// the partial file so the caller can retry the same path.
+func (c *Client) placeAtOutput(src, dst string) error {
+	data, err := c.readCacheFile(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, in)
+	_, err = out.Write(data)
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}

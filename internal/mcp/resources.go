@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -54,7 +53,7 @@ func (s *Server) handleMediaResource(ctx context.Context, req mcp.ReadResourceRe
 	if !r.Success {
 		return nil, fmt.Errorf("download media for %s/%s: %s", chatJID, messageID, r.Message)
 	}
-	data, err := os.ReadFile(r.Path)
+	data, err := s.client.ReadMedia(r.Path)
 	if err != nil {
 		return nil, fmt.Errorf("read decrypted media at %s: %w", r.Path, err)
 	}

@@ -8,3 +8,8 @@ cover.out
 *.log
 claude_desktop_config.json
 docs/superpowers
+build/
+secrets/
+*.key
+token
+.claude/

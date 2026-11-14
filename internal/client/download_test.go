@@ -457,7 +457,8 @@ func TestDownload_OutputPathSymlinkRejected(t *testing.T) {
 func TestPlaceAtOutputRemovesPartialFile(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "out.jpg")
-	if err := placeAtOutput(dir, dst); err == nil { // reading a directory fails mid-copy
+	c := &Client{}
+	if err := c.placeAtOutput(dir, dst); err == nil { // reading a directory fails
 		t.Fatal("expected copy failure")
 	}
 	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
@@ -467,7 +468,7 @@ func TestPlaceAtOutputRemovesPartialFile(t *testing.T) {
 	if err := os.WriteFile(src, []byte("DATA"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := placeAtOutput(src, dst); err != nil {
+	if err := c.placeAtOutput(src, dst); err != nil {
 		t.Fatalf("retry failed: %v", err)
 	}
 }

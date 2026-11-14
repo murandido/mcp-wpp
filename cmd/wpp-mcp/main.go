@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/murandido/mcp-wpp/internal/crypto"
 	mcpsrv "github.com/murandido/mcp-wpp/internal/mcp"
 	"github.com/murandido/mcp-wpp/internal/security"
 )
@@ -29,6 +30,8 @@ Commands:
   serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
   open-ui      Print a single-use browser login link for the /pair page
+  keygen       Create a new encryption key file (back it up!)
+  encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
   login        Pair this device (QR in the terminal, or -phone for a pairing code); daemon must be stopped
   healthcheck  Probe local daemon readiness (for container health checks)
   smoke        Non-interactive boot check (CI)
@@ -36,6 +39,9 @@ Commands:
 
 Global flags (before the command):
   -store DIR   Directory holding the databases and token (default ./store, env WPP_MCP_STORE)
+  -key-file F  Encryption key file (env WPP_MCP_KEY_FILE; default ~/.config/wpp-mcp/key,
+               /run/secrets/wpp_mcp_key in Docker, or a systemd credential)
+  -no-encryption  Keep the store unencrypted (env WPP_MCP_NO_ENCRYPTION=1)
   -debug       Show full JIDs, names and message bodies in logs (default: redacted)
   -version     Print version and exit
 
@@ -82,6 +88,10 @@ func main() {
 		defaultStore = "./store"
 	}
 	fs.StringVar(&storeDir, "store", defaultStore, "directory holding messages.db and whatsapp.db (env WPP_MCP_STORE)")
+	noEnc := os.Getenv("WPP_MCP_NO_ENCRYPTION")
+	encryption.disabled = noEnc == "1" || strings.EqualFold(noEnc, "true")
+	fs.StringVar(&encryption.keyFile, "key-file", crypto.DefaultKeyPath(), "encryption key file (env WPP_MCP_KEY_FILE; default: Docker secret, systemd credential, or ~/.config/wpp-mcp/key)")
+	fs.BoolVar(&encryption.disabled, "no-encryption", encryption.disabled, "store databases and media unencrypted (env WPP_MCP_NO_ENCRYPTION=1)")
 	fs.BoolVar(&debug, "debug", false, "show full JIDs, names and message bodies in logs (default: redacted)")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
@@ -108,6 +118,10 @@ func main() {
 		code = runServe(storeDir, redactor, rest)
 	case "smoke":
 		code = runSmoke(storeDir, redactor, rest)
+	case "keygen":
+		code = runKeygen(rest)
+	case "encrypt":
+		code = runEncrypt(storeDir, redactor, rest)
 	case "stdio":
 		code = runStdio(storeDir, rest)
 	case "open-ui":

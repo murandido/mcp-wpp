@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/murandido/mcp-wpp/internal/crypto"
 )
 
 // ChmodBestEffort tightens a path's permissions but tolerates filesystems that
@@ -101,6 +101,14 @@ type Store struct {
 // created/tightened to 0700 and each .db file ends up at 0600 to keep session
 // material and cached message contents off other local users' radar.
 func Open(dir string) (*Store, error) {
+	return OpenWithKeys(dir, nil)
+}
+
+// OpenWithKeys is Open with encryption at rest: messages.db is opened with
+// keys.Messages and the read-only whatsapp.db handle with keys.WhatsApp. A
+// nil keys opens both unencrypted. Mixing modes (a plaintext file with keys,
+// or an encrypted file without) is refused.
+func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
@@ -110,7 +118,17 @@ func Open(dir string) (*Store, error) {
 	msgPath := filepath.Join(dir, "messages.db")
 	waPath := filepath.Join(dir, "whatsapp.db")
 
-	db, err := sql.Open("sqlite3", "file:"+msgPath+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
+	var msgKey, waKey []byte
+	if keys != nil {
+		msgKey, waKey = keys.Messages, keys.WhatsApp
+	}
+	for _, p := range []string{msgPath, waPath} {
+		if err := crypto.CheckStoreFile(p, keys != nil); err != nil {
+			return nil, err
+		}
+	}
+
+	db, err := crypto.OpenSQLite("file:"+msgPath+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000", msgKey)
 	if err != nil {
 		return nil, fmt.Errorf("open messages db: %w", err)
 	}
@@ -139,11 +157,9 @@ func Open(dir string) (*Store, error) {
 	}
 
 	// whatsapp.db may not yet exist on first run; open lazily in read-only mode.
-	waDB, err := sql.Open("sqlite3", "file:"+waPath+"?mode=ro")
-	if err != nil {
-		// Non-fatal: LID resolution falls through to identity.
-		waDB = nil
-	}
+	// Not verified here: whatsapp.db may not exist until the first pairing,
+	// and LID resolution falls through to identity when it cannot be read.
+	waDB := sql.OpenDB(crypto.ReadOnlyConnector("file:"+waPath+"?mode=ro", waKey))
 	// If whatsapp.db already exists (from a previous login), tighten it.
 	if err := ChmodBestEffort(waPath, 0o600); err != nil {
 		db.Close()

@@ -21,6 +21,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	"github.com/murandido/mcp-wpp/internal/crypto"
 	"github.com/murandido/mcp-wpp/internal/ratelimit"
 	"github.com/murandido/mcp-wpp/internal/security"
 	"github.com/murandido/mcp-wpp/internal/store"
@@ -43,6 +44,10 @@ type Config struct {
 	// FullHistory asks the phone for a full history sync when this device
 	// links (see RequestFullHistory). False keeps whatsmeow's defaults.
 	FullHistory bool
+	// Keys enables encryption at rest: whatsapp.db is opened with
+	// Keys.WhatsApp and cached media is sealed with Keys.Media. Nil keeps
+	// both in the clear.
+	Keys *crypto.Keys
 }
 
 // Client wraps a whatsmeow.Client together with the message cache and logger.
@@ -52,6 +57,7 @@ type Client struct {
 	groupInfo        func(context.Context, types.JID) (*types.GroupInfo, error)
 	sendMediaRetry   func(context.Context, *types.MessageInfo, []byte) error
 	store            *store.Store
+	media            *crypto.MediaCipher // nil: media cache is plaintext
 	log              waLog.Logger
 	handlerID        uint32
 	handlerInstalled bool
@@ -73,7 +79,7 @@ type Client struct {
 	mediaRetryLIDs      wmstore.LIDStore
 	// Speech-to-text (see transcribe.go). transcribeFn is a test seam.
 	transcribeCfg transcribe.Config
-	transcribeFn  func(ctx context.Context, cfg transcribe.Config, path, language string) (transcribe.Result, error)
+	transcribeFn  func(ctx context.Context, cfg transcribe.Config, audio []byte, filename, language string) (transcribe.Result, error)
 	transcribeMu  sync.Mutex
 	// isConnected and waSend are wa's IsConnected and SendMessage, used by
 	// SendReply, SendReaction, polls and contact cards (waSend through the
@@ -145,9 +151,26 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 
 	dbLog := NewStderrLogger("Database", "INFO", true)
 	waPath := filepath.Join(cfg.StoreDir, "whatsapp.db")
-	container, err := sqlstore.New(ctx, "sqlite3", "file:"+waPath+"?_foreign_keys=on", redactingLogger{inner: dbLog, redactor: redactor})
+	var waKey []byte
+	var media *crypto.MediaCipher
+	if cfg.Keys != nil {
+		waKey = cfg.Keys.WhatsApp
+		var mcErr error
+		if media, mcErr = crypto.NewMediaCipher(cfg.Keys.Media); mcErr != nil {
+			return nil, mcErr
+		}
+	}
+	if err := crypto.CheckStoreFile(waPath, cfg.Keys != nil); err != nil {
+		return nil, err
+	}
+	waDB, err := crypto.OpenSQLite("file:"+waPath+"?_foreign_keys=on", waKey)
 	if err != nil {
-		return nil, fmt.Errorf("open whatsmeow sqlstore: %w", err)
+		return nil, fmt.Errorf("open whatsapp.db: %w", err)
+	}
+	container := sqlstore.NewWithDB(waDB, "sqlite3", redactingLogger{inner: dbLog, redactor: redactor})
+	if err := container.Upgrade(ctx); err != nil {
+		_ = container.Close()
+		return nil, fmt.Errorf("upgrade whatsmeow sqlstore: %w", err)
 	}
 	// whatsmeow creates whatsapp.db with the process umask; force 0600
 	// (best-effort — see store.ChmodBestEffort for the network-mount rationale).
@@ -189,6 +212,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		allowedMediaRoot: cfg.AllowedMediaRoot,
 		redactor:         redactor,
 		limiter:          limiter,
+		media:            media,
 		labelsEnabled:    cfg.LabelsEnabled,
 		status:           ConnectionStatus{State: "disconnected", Since: time.Now().UTC()},
 		transcribeCfg:    transcribe.ConfigFromEnv(),

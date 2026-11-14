@@ -27,7 +27,22 @@ func runSmoke(storeDir string, redactor *security.Redactor, args []string) int {
 
 	ctx := context.Background()
 
-	st, err := store.Open(storeDir)
+	// Smoke never touches the operator's store or key: it opens a throwaway
+	// store with throwaway keys, which also proves SQLCipher is linked.
+	_ = storeDir
+	tmpStore, err := os.MkdirTemp("", "wpp-mcp-smoke-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "smoke: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(tmpStore)
+	storeDir = tmpStore
+	keys, err := smokeKeys()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "smoke: %v\n", err)
+		return 1
+	}
+	st, err := store.OpenWithKeys(storeDir, keys)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
 		return 1
@@ -39,6 +54,7 @@ func runSmoke(storeDir string, redactor *security.Redactor, args []string) int {
 		Store:    st,
 		Logger:   client.NewStderrLogger("Smoke", "WARN", false),
 		Redactor: redactor,
+		Keys:     keys,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init client: %v\n", err)
@@ -49,6 +65,10 @@ func runSmoke(storeDir string, redactor *security.Redactor, args []string) int {
 	srv := mcpsrv.NewServer(c, nil, false) // no pair cache or label sync in smoke mode
 	_ = srv                                // construction is the smoke test; not starting the server here
 
-	fmt.Fprintln(os.Stderr, "smoke: OK — store opens, client initialises, MCP tools register.")
+	if keys != nil {
+		fmt.Fprintln(os.Stderr, "smoke: OK — encrypted store opens, client initialises, MCP tools register.")
+	} else {
+		fmt.Fprintln(os.Stderr, "smoke: OK (unencrypted) — store opens, client initialises, MCP tools register.")
+	}
 	return 0
 }

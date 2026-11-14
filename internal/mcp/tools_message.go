@@ -252,6 +252,6 @@ func (s *Server) registerDownloadMedia() {
 			return mcp.NewToolResultError("message_id and chat_jid are required"), nil
 		}
 		r := s.client.DownloadWithMediaRetry(ctx, a.MessageID, a.ChatJID, a.OutputPath)
-		return downloadMediaResult(r)
+		return downloadMediaResultWith(r, s.client.ReadMedia)
 	}))
 }

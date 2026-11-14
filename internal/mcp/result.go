@@ -39,6 +39,12 @@ const inlineMediaMaxBytes = 5 * 1024 * 1024
 // JSON block — the tool is still useful and the caller can fetch the file
 // out of band via Path.
 func downloadMediaResult(r client.DownloadResult) (*mcp.CallToolResult, error) {
+	return downloadMediaResultWith(r, os.ReadFile)
+}
+
+// downloadMediaResultWith reads the media through read, which decrypts the
+// cache when encryption at rest is on (client.ReadMedia).
+func downloadMediaResultWith(r client.DownloadResult, read func(string) ([]byte, error)) (*mcp.CallToolResult, error) {
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("marshal: %v", err)), nil
@@ -46,7 +52,7 @@ func downloadMediaResult(r client.DownloadResult) (*mcp.CallToolResult, error) {
 	contents := []mcp.Content{mcp.NewTextContent(string(b))}
 
 	if r.Success && (r.MediaType == "image" || r.MediaType == "audio") && r.Path != "" {
-		if inlined, ok := readInlineMedia(r.Path, r.MediaType); ok {
+		if inlined, ok := readInlineMedia(r.Path, r.MediaType, read); ok {
 			contents = append(contents, inlined)
 		}
 	}
@@ -60,16 +66,18 @@ func downloadMediaResult(r client.DownloadResult) (*mcp.CallToolResult, error) {
 // (resources.go) so we get the real format regardless of the filename
 // WhatsApp assigns (all photos are named `.jpg` even when the underlying
 // bytes are WebP, and all voice notes are named `.ogg`).
-func readInlineMedia(path, mediaType string) (mcp.Content, bool) {
+func readInlineMedia(path, mediaType string, read func(string) ([]byte, error)) (mcp.Content, bool) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, false
 	}
-	if info.Size() > inlineMediaMaxBytes {
+	// Sealed cache files are 33 bytes larger than their plaintext; the cap
+	// is checked again after decryption.
+	if info.Size() > inlineMediaMaxBytes+64 {
 		return nil, false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
+	data, err := read(path)
+	if err != nil || len(data) > inlineMediaMaxBytes {
 		return nil, false
 	}
 	mimeType := sniffResourceMIME(data, mediaType)

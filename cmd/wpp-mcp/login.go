@@ -43,7 +43,7 @@ func runLogin(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 	defer lock.Release()
 
-	st, err := store.Open(storeDir)
+	st, keys, err := openStore(storeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
 		return 1
@@ -51,6 +51,7 @@ func runLogin(storeDir string, redactor *security.Redactor, args []string) int {
 	defer st.Close()
 
 	c, err := client.New(ctx, client.Config{
+		Keys:     keys,
 		StoreDir: storeDir,
 		Store:    st,
 		// login flow logs normally to stderr; the QR itself goes to stdout.

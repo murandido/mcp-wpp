@@ -119,7 +119,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	// to drop outbound attachments.
 	fmt.Fprintf(os.Stderr, "media root: %s (drop outbound files here)\n", allowedMediaRoot)
 
-	st, err := store.Open(storeDir)
+	st, keys, err := openStore(storeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open store: %v\n", err)
 		return 1
@@ -133,6 +133,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 
 	c, err := client.New(ctx, client.Config{
+		Keys:             keys,
 		RateLimiter:      ratelimit.New(limits),
 		StoreDir:         storeDir,
 		Store:            st,

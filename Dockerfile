@@ -1,41 +1,55 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af AS build
-ARG VERSION=dev
+# ---- build: Go + SQLCipher -------------------------------------------------
+FROM docker.io/library/golang:1.26-trixie AS build
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsqlcipher-dev \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ENV CGO_ENABLED=1
-RUN go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
-    -o /out/wpp-mcp ./cmd/wpp-mcp
+ARG VERSION=dev
+RUN make build VERSION=${VERSION}
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
+# ---- test: the full suite against SQLCipher (make container-test) ---------
+FROM build AS test
+RUN make lint test smoke e2e
 
-# ffmpeg: only needed by send_audio_message for non-Opus input (see
-# internal/media/audio.go); the tool degrades to a clear error without it,
-# so it's not optional in this image but the binary itself would still run.
-# ca-certificates: TLS to WhatsApp's servers.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        ffmpeg \
+# ---- runtime ---------------------------------------------------------------
+FROM docker.io/library/debian:trixie-slim AS runtime
+ARG DEBIAN_FRONTEND=noninteractive
+
+# ffmpeg is only needed by send_audio_message for non-Opus input; build with
+# --build-arg WITH_FFMPEG=1 to include it.
+ARG WITH_FFMPEG=0
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends ca-certificates libsqlcipher1 \
+    && if [ "$WITH_FFMPEG" = "1" ]; then apt-get install -y --no-install-recommends ffmpeg; fi \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -r -u 10001 -m app
-COPY --from=build /out/wpp-mcp /usr/local/bin/wpp-mcp
+RUN useradd -r -u 10001 -m -d /home/app app \
+    && mkdir -p /data/store \
+    && chown -R app:app /data \
+    && chmod 0700 /data/store
+COPY --from=build /src/bin/wpp-mcp /usr/local/bin/wpp-mcp
 
 USER app
-WORKDIR /home/app
-RUN mkdir -p /home/app/store
+WORKDIR /data
 
-# Loopback-only by default, matching the binary's own default. Reaching this
-# from outside the container (docker run -p) needs the app's own remote-bind
-# opt-in: override CMD with `-addr 0.0.0.0:8765 -allow-remote` and set
-# WPP_MCP_TOKEN — see README.md.
+# The daemon listens on the container interface so Docker can publish the
+# port; publish it on the host's loopback only (see compose.yaml). Every route
+# except the probes needs the bearer token in /data/store/token, and the
+# Host/Origin guard still rejects non-loopback hostnames.
+ENV WPP_MCP_STORE=/data/store \
+    WPP_MCP_ADDR=0.0.0.0:8765 \
+    WPP_MCP_KEY_FILE=/run/secrets/wpp_mcp_key
 EXPOSE 8765
-VOLUME ["/home/app/store"]
+VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["wpp-mcp", "healthcheck"]
 
-ENTRYPOINT ["wpp-mcp", "-store", "/home/app/store"]
-CMD ["serve"]
+ENTRYPOINT ["wpp-mcp"]
+CMD ["serve", "-allow-remote"]
