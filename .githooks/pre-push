@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run the fast gates before anything leaves the machine. Skip with --no-verify.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+zero=0000000000000000000000000000000000000000
+while read -r _ local_sha _ _; do
+	[ "$local_sha" = "$zero" ] && continue
+	# Only commits no remote has seen yet.
+	scripts/check-commit-msg.sh --range "$local_sha" --not --remotes
+done
+make lint test

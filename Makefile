@@ -1,4 +1,4 @@
-.PHONY: docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
+.PHONY: check hooks vuln tidy-check docs-check lint-go docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
 
 # fmt uses process substitution; force bash so `make lint` works under a POSIX /bin/sh
 SHELL := /bin/bash
@@ -68,7 +68,36 @@ vet: sqlcipher-check
 fmt:
 	@diff -u <(echo -n) <(gofmt -d .) || (echo "gofmt differences found"; exit 1)
 
-lint: vet fmt
+# golangci-lint and govulncheck versions are pinned here and in CI.
+GOLANGCI_VERSION := v2.12.2
+GOVULNCHECK_VERSION := v1.6.0
+
+lint-go: sqlcipher-check
+	@command -v golangci-lint >/dev/null || { echo "golangci-lint missing: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)"; exit 1; }
+	golangci-lint run ./...
+
+lint: vet fmt lint-go
+
+vuln: sqlcipher-check
+	@command -v govulncheck >/dev/null || { echo "govulncheck missing: go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)"; exit 1; }
+	govulncheck -tags libsqlite3,sqlite_fts5 ./...
+
+# go.mod and go.sum must already be tidy.
+tidy-check:
+	$(GO) mod tidy -diff
+
+# docs/tools.md must match the tool registry.
+docs-check:
+	@env -u CGO_CFLAGS -u CGO_LDFLAGS $(GO) run ./cmd/wpp-mcp tools -markdown | diff -u docs/tools.md - || { echo "docs/tools.md is stale: run make docs"; exit 1; }
+
+# Everything CI runs, in one command.
+check: lint vuln tidy-check docs-check test-race smoke e2e
+	@echo "all gates passed"
+
+# Use the repository's commit-msg and pre-push hooks.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "hooks installed: commit messages are checked, and push runs make lint test"
 
 e2e: build
 	$(GO) test -tags "libsqlite3 sqlite_fts5 e2e" ./e2e/...

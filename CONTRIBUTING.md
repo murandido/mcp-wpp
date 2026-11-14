@@ -18,8 +18,9 @@ Thanks for helping! `mcp-wpp` exposes some of the most private data people have,
 You need Go 1.26+, a C toolchain and SQLCipher (`dnf install sqlcipher-devel`, `apt install libsqlcipher-dev`, `brew install sqlcipher`), or just Docker/Podman.
 
 ```bash
-make lint test e2e smoke   # native
-make container-test        # everything in a container
+make hooks                 # once: checks commit messages, runs lint+test before push
+make check                 # every CI gate, natively (needs golangci-lint and govulncheck)
+make container-test        # the test stage in Debian, nothing to install
 make docs                  # after adding or changing a tool
 ```
 
@@ -27,7 +28,7 @@ Tests use fixtures and throwaway encrypted stores; they never need a WhatsApp ac
 
 ## Pull requests
 
-- Target `main`, use [conventional commits](https://www.conventionalcommits.org/), and mark breaking changes with `!`.
+- Target `main`. Commit subjects and PR titles must be `type(scope): summary` ([Conventional Commits](https://www.conventionalcommits.org/) with a mandatory scope), for example `fix(store): keep access decisions on retention`. Mark breaking changes with `!` and a `BREAKING CHANGE:` footer. PRs are squash-merged with their title.
 - Describe the user-facing change and why.
 - If you touch a tool, update its three classifications (read-only, group, access scope) and regenerate `docs/tools.md`.
 

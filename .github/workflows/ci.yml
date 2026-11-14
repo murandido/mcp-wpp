@@ -3,11 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   schedule:
-    - cron: '17 6 * * 1'  # weekly whatsmeow upgrade probe
+    - cron: '17 6 * * 1' # weekly: whatsmeow upgrade probe
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,49 +16,133 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-      - name: Install SQLCipher and ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev ffmpeg
-      - run: go mod download
-      - name: Lint (go vet + gofmt)
-        run: make lint
-      - name: Unit tests (race, coverage)
-        run: make test-cover
-      - name: Smoke test (encrypted store)
-        run: make smoke
-      - name: End-to-end tests
-        run: make e2e
-      - name: Tool reference is up to date
-        run: make docs && git diff --exit-code docs/tools.md
-      - name: mdtest parity grep
-        # Fails if a whatsmeow method we call disappears upstream — an early
-        # signal that the API was removed or renamed.
-        run: bash ./scripts/mdtest-parity.sh
+# Actions are pinned to commit SHAs (Dependabot keeps them current) so a
+# moved tag cannot change what runs here. Tool versions match the Makefile.
+env:
+  GOLANGCI_VERSION: v2.12.2
+  GOVULNCHECK_VERSION: v1.6.0
 
-  secrets-scan:
+jobs:
+  commits:
+    name: Commit messages
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+          persist-credentials: false
+      - name: Pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: scripts/check-commit-msg.sh --subject "$TITLE"
+      - name: Commits in this change
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "no base commit (first push); checking HEAD only"
+            scripts/check-commit-msg.sh --range -1 "$HEAD"
+          else
+            scripts/check-commit-msg.sh --range "$BASE..$HEAD"
+          fi
+
+  check:
+    name: Lint, vulnerabilities, tests
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install SQLCipher and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsqlcipher-dev ffmpeg
+      - name: Install golangci-lint and govulncheck
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"$GOLANGCI_VERSION"
+          go install golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION"
+      - name: make check (lint, vuln, tidy, docs, race tests, smoke, e2e)
+        run: make check
+      - name: Coverage
+        run: make test-cover
+      - name: whatsmeow API parity
+        # Fails if a whatsmeow method we call disappears upstream.
+        run: bash ./scripts/mdtest-parity.sh
+
+  container:
+    name: Container image (Debian, FTS5 required)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Full test stage
+        run: docker build --target test -t wpp-mcp:test .
+      - name: Runtime image
+        run: |
+          docker build --target runtime -t wpp-mcp:ci .
+          docker run --rm wpp-mcp:ci -version
+          docker run --rm wpp-mcp:ci smoke
+
+  codeql:
+    name: CodeQL
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install SQLCipher
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsqlcipher-dev
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: go
+          build-mode: manual
+          queries: security-and-quality
+      - run: make build
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+
+  secrets:
+    name: Secrets scan
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  container:
-    # The image is the main distribution channel; make sure it still builds
-    # and its full test stage passes.
+  # The one check to require in branch protection: it fails if any gate
+  # failed or was cancelled.
+  gate:
+    name: All gates
+    if: always() && github.event_name != 'schedule'
+    needs: [commits, check, container, codeql, secrets]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build --target test -t wpp-mcp:test .
+      - name: Verify every gate passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) echo "a gate did not pass ($r)"; exit 1 ;; esac
+          done
 
   upgrade-check:
     if: github.event_name == 'schedule'
@@ -68,12 +151,14 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: 'stable'
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Install SQLCipher and ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsqlcipher-dev ffmpeg
       - name: Record pinned version
         run: echo "OLD_PIN=$(go list -m -f '{{.Version}}' go.mau.fi/whatsmeow)" >> "$GITHUB_ENV"
       - run: go get go.mau.fi/whatsmeow@main

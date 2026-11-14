@@ -1,0 +1,46 @@
+version: "2"
+
+issues:
+  # Report everything: a gate that hides repeats is not a gate.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  build-tags: [libsqlite3, sqlite_fts5]
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - gosec
+    - misspell
+    - nolintlint
+    - unconvert
+  settings:
+    misspell: {} # no locale: the code mixes British prose with American identifiers
+    gosec:
+      excludes:
+        - G104 # unhandled errors: errcheck covers this with better exclusions
+        - G115 # int conversions here are of sizes, durations and timestamps that are never negative
+  exclusions:
+    presets: [comments, std-error-handling, common-false-positives]
+    rules:
+      # Tests build throwaway files, servers and requests on purpose.
+      - path: _test\.go
+        linters: [gosec, bodyclose, errcheck]
+      - path: e2e/
+        linters: [gosec, bodyclose, errcheck]
+      # whatsmeow keeps waProto as a deprecated alias of the waE2E types;
+      # migrating every call site is tracked separately.
+      - linters: [staticcheck]
+        text: 'SA1019: (waProto|"go.mau.fi/whatsmeow/binary/proto")'
+      # Tests reach into whatsmeow internals on purpose.
+      - path: _test\.go
+        linters: [staticcheck]
+        text: "SA1019: .*DangerousInternals"
+      # Store queries are assembled only from constant fragments (column
+      # lists, access filters, placeholders); every value is a bound argument.
+      - path: internal/store/
+        linters: [gosec]
+        text: "G202"

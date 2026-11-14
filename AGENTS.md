@@ -45,7 +45,11 @@ make e2e             # real binary, encrypted throwaway stores, no WhatsApp acco
 make smoke
 make container-test  # all of the above in Debian, for hosts without SQLCipher
 make docs            # regenerate docs/tools.md (CI fails if it is stale)
+make check           # every CI gate: lint (vet, gofmt, golangci-lint), govulncheck, tidy, docs, race tests, smoke, e2e
+make hooks           # once per clone: commit-msg check and a pre-push `make lint test`
 ```
+
+Lint findings are fixed, not silenced. A `//nolint` needs the linter name and a reason, and `nolintlint` enforces that. Repository-wide exclusions live in `.golangci.yml` with a justification. Ubuntu and Debian SQLCipher packages include FTS5, but Fedora's does not; there, FTS tests skip locally. The container stage (`WPP_MCP_REQUIRE_FTS5=1`) always requires it.
 
 A plain `go test ./...` also works: crypto and FTS tests skip, and the store falls back to LIKE search. Store tests use `openTestStore(t)` (seeded in-memory DB, `internal/store/testdata/seed.sql`). Access tests in `internal/mcp/access_test.go` show how to build a server over a real store without connecting to WhatsApp. Never point tests at a live account.
 
@@ -69,7 +73,8 @@ When adding a tool:
 
 ## Git, versions and releases
 
-- Branch from `main` (`feat/<slug>`, `fix/<slug>`), use conventional commits, and open focused pull requests. CI must pass (lint, unit, e2e, container, secrets scan, docs freshness).
+- Commit subjects are `type(scope): summary`, with `!` before the colon for breaking changes, e.g. `feat(access): …`, `fix(crypto)!: …`. Allowed types: feat, fix, chore, docs, refactor, perf, test, build, ci, style, revert. The scope is the area touched: `access`, `crypto`, `daemon`, `mcp`, `store`, `client`, `pairing`, `outbox`, `cli`, `docker`, `ci`, `docs`, `deps`. `scripts/check-commit-msg.sh` enforces it in the commit-msg hook and in CI, for commits and PR titles alike.
+- Branch from `main` (`feat/<slug>`, `fix/<slug>`) and open focused pull requests. The required check is **All gates**: commits, `make check`, the container test stage, CodeQL and the secrets scan. `main` is squash-merged only, with the PR title as the commit subject (`scripts/protect-main.sh` configures this).
 - Versions come from Git tags (`git describe` → `main.Version` via `-ldflags`). Do not add a version file. Pre-1.0, a minor bump may break things; mark those commits with `!` and a `BREAKING CHANGE:` footer.
 - Release: tag `vX.Y.Z` on a clean `main`. `.github/workflows/release.yml` publishes multi-arch images to `ghcr.io/murandido/mcp-wpp`.
 
