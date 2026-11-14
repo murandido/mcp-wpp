@@ -61,9 +61,9 @@ func (s *Store) searchContactNames(pattern string) map[string]string {
 	return out
 }
 
-// isNumberName reports whether a chat name is just the chat's phone number,
-// which is what WhatsApp stores for 1:1 chats without a pushed name.
-func isNumberName(name, jid string) bool {
+// isNumberName reports whether a chat name is only digits: the chat's phone
+// number, or a LID user part, which is what WhatsApp leaves on many 1:1 chats.
+func isNumberName(name, _ string) bool {
 	digits := strings.Map(func(r rune) rune {
 		switch {
 		case r >= '0' && r <= '9':
@@ -73,7 +73,7 @@ func isNumberName(name, jid string) bool {
 		}
 		return 'x'
 	}, name)
-	return digits == "" || digits == jidUser(jid)
+	return !strings.Contains(digits, "x")
 }
 
 // displayName returns the best human name for a chat: the cached chat name,
