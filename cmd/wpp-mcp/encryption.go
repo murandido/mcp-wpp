@@ -43,9 +43,19 @@ func openStore(storeDir string) (*store.Store, *crypto.Keys, error) {
 func runKeygen(args []string) int {
 	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	out := fs.String("out", encryption.keyFile, "where to write the new key (default: the -key-file location)")
+	out := fs.String("out", encryption.keyFile, "where to write the new key (default: the -key-file location); - prints it to stdout")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *out == "-" {
+		key, err := crypto.NewKeyHex()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "keygen: %v\n", err)
+			return 1
+		}
+		fmt.Println(key)
+		fmt.Fprintln(os.Stderr, "Store this key with mode 0600 and back it up: without it the store cannot be read.")
+		return 0
 	}
 	if err := crypto.GenerateKeyFile(*out); err != nil {
 		fmt.Fprintf(os.Stderr, "keygen: %v\n", err)

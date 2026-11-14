@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build: Go + SQLCipher -------------------------------------------------
-FROM docker.io/library/golang:1.26-trixie AS build
+FROM docker.io/library/golang:1.26-trixie@sha256:19ce7a1fdc59527aa568805ea100c380900d059d251e914fb86e11fd0ce68952 AS build
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libsqlcipher-dev \
@@ -18,7 +18,7 @@ FROM build AS test
 RUN make lint test smoke e2e
 
 # ---- runtime ---------------------------------------------------------------
-FROM docker.io/library/debian:trixie-slim AS runtime
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ffmpeg is only needed by send_audio_message for non-Opus input; build with

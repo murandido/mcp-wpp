@@ -3,11 +3,12 @@
 <!--
   wpp-mcp launchd agent template.
 
-  1. Copy this file to ~/Library/LaunchAgents/.
-  2. Replace {{PATH_TO_REPO}} and {{STORE_DIR}} with absolute paths.
-  3. (Optional) adjust WPP_MCP_ADDR / WPP_MCP_MEDIA_ROOT / WPP_MCP_DEBUG.
+  1. Create the key and back it up: wpp-mcp -key-file ~/.config/wpp-mcp/key keygen
+  2. Copy this file to ~/Library/LaunchAgents/.
+  3. Replace {{PATH_TO_BIN}}, {{STORE_DIR}} and {{HOME}} with absolute paths.
   4. launchctl load ~/Library/LaunchAgents/com.murandido.wpp-mcp.plist
-  5. On first install, open http://127.0.0.1:8765/pair in a browser.
+  5. Pair once:   wpp-mcp -store {{STORE_DIR}} pair -phone +<number>
+  6. Allow chats: wpp-mcp -store {{STORE_DIR}} access list
 -->
 <plist version="1.0">
 <dict>
@@ -16,7 +17,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>{{PATH_TO_REPO}}/bin/wpp-mcp</string>
+        <string>{{PATH_TO_BIN}}/wpp-mcp</string>
         <string>-store</string>
         <string>{{STORE_DIR}}</string>
         <string>serve</string>
@@ -26,8 +27,8 @@
     <dict>
         <key>WPP_MCP_ADDR</key>
         <string>127.0.0.1:8765</string>
-        <key>WPP_MCP_MEDIA_ROOT</key>
-        <string>{{STORE_DIR}}/uploads</string>
+        <key>WPP_MCP_KEY_FILE</key>
+        <string>{{HOME}}/.config/wpp-mcp/key</string>
     </dict>
 
     <key>RunAtLoad</key>

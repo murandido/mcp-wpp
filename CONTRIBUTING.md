@@ -1,53 +1,36 @@
 # Contributing
 
-## About this project
+Thanks for helping! `mcp-wpp` exposes some of the most private data people have, so changes are reviewed first for their security impact. Read the **Security invariants** in [AGENTS.md](AGENTS.md) before you start.
 
-This repository wraps the [whatsmeow](https://github.com/tulir/whatsmeow) Go library to expose a personal WhatsApp account through an HTTP MCP server. The Go application adds a local SQLite message cache, LID resolution, history sync, and MCP tools.
+## Scope
 
-Protocol, session-management, and media-transfer issues usually belong in whatsmeow. The MCP server, cache, and LID-resolution code belong here.
+- **Here:** the MCP server, consent policy, encryption, cache, daemon, CLI and packaging.
+- **Upstream:** WhatsApp protocol, sessions and media transfer belong to [whatsmeow](https://github.com/tulir/whatsmeow).
 
 ## Before you start
 
 - Open an issue before substantial work so the scope can be agreed.
-- Keep each pull request focused on one logical change.
-- Match the existing Go style in `cmd/` and `internal/`.
-- Do not commit `.env` files, databases (`*.db`), session state, or media.
-- Start from `main` on a `feat/<slug>` or `fix-<issue>` branch. Use a worktree under `.claude/worktrees/` when following the repository workflow.
+- Keep each pull request focused on one change, with tests.
+- Never commit keys, tokens, databases, `data/`, `secrets/`, media, or real phone numbers and chat names. CI runs a secrets scan.
 
 ## Build and test
 
-```bash
-make build        # writes ./bin/wpp-mcp
-make lint         # go vet and verify gofmt
-make test         # unit tests
-make test-race    # race detector
-make e2e          # build and run the HTTP MCP end-to-end tests
-make smoke        # boot-test without connecting to WhatsApp
-```
-
-Run the checks relevant to your change. The unit tests use local fixtures and do not need a WhatsApp account. For manual integration testing, pair a device with:
+You need Go 1.26+, a C toolchain and SQLCipher (`dnf install sqlcipher-devel`, `apt install libsqlcipher-dev`, `brew install sqlcipher`), or just Docker/Podman.
 
 ```bash
-./bin/wpp-mcp login
+make lint test e2e smoke   # native
+make container-test        # everything in a container
+make docs                  # after adding or changing a tool
 ```
 
-`make upgrade-check` updates the whatsmeow dependency to `@main`, tidies modules, builds, and tests. It changes `go.mod` and `go.sum`; use it when working on an intentional dependency update and review those changes before committing.
+Tests use fixtures and throwaway encrypted stores; they never need a WhatsApp account. For manual testing, pair a spare number with `wpp-mcp pair -phone +<number>`.
 
 ## Pull requests
 
-- Open pull requests against `main`; the repository does not use a `dev` branch.
-- Describe the user-facing change and its rationale.
-- Link the issue it closes, if any.
-- Call out breaking changes to MCP tool signatures or the database schema.
-- Squash-merge after the required checks pass.
+- Target `main`, use [conventional commits](https://www.conventionalcommits.org/), and mark breaking changes with `!`.
+- Describe the user-facing change and why.
+- If you touch a tool, update its three classifications (read-only, group, access scope) and regenerate `docs/tools.md`.
 
-## Upstream issues
+## Windows
 
-- Protocol issues such as authentication failures, message decryption, or presence: [whatsmeow issues](https://github.com/tulir/whatsmeow/issues).
-- MCP, storage, or LID-resolution issues: this repository.
-
-If you are unsure where an issue belongs, open an issue here for triage.
-
-## Licence
-
-By contributing, you agree that your contributions will be licensed under the [MIT Licence](LICENSE).
+Building needs CGO and a C compiler (see [docs/windows.md](docs/windows.md)). Encryption needs SQLCipher, which is easiest to get through Docker or WSL.

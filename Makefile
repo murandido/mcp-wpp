@@ -1,4 +1,4 @@
-.PHONY: build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
+.PHONY: docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
 
 # fmt uses process substitution; force bash so `make lint` works under a POSIX /bin/sh
 SHELL := /bin/bash
@@ -87,6 +87,10 @@ smoke: build
 CONTAINER ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 container-test:
 	$(CONTAINER) build -f Dockerfile --target test -t wpp-mcp:test .
+
+# Regenerate docs/tools.md from the tool registry.
+docs:
+	env -u CGO_CFLAGS -u CGO_LDFLAGS $(GO) run ./cmd/wpp-mcp tools -markdown > docs/tools.md
 
 clean:
 	rm -rf bin build cover.out

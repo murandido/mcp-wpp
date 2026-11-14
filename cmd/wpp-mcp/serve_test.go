@@ -69,3 +69,17 @@ func TestRunServe_RejectsInvalidLabelsEnvironment(t *testing.T) {
 		t.Fatalf("invalid labels config: code %d, stderr %s", code, raw)
 	}
 }
+
+func TestDialableAddr(t *testing.T) {
+	for in, want := range map[string]string{
+		"0.0.0.0:8765":   "127.0.0.1:8765",
+		"[::]:8765":      "127.0.0.1:8765",
+		":8765":          "127.0.0.1:8765",
+		"127.0.0.1:9000": "127.0.0.1:9000",
+		"unix:/x.sock":   "unix:/x.sock",
+	} {
+		if got := dialableAddr(in); got != want {
+			t.Errorf("dialableAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

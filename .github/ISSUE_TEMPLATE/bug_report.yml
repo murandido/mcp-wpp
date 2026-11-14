@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste message contents, chat names, phone numbers, tokens or keys.** Logs are redacted by default; keep them that way.
+        Security issues go to a [private advisory](https://github.com/murandido/mcp-wpp/security/advisories/new), not here.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `wpp-mcp -version`
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How do you run it?
+      options: [Docker Compose, Native (Linux), Native (macOS), Windows / WSL, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands and flags (with personal data removed)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      render: text

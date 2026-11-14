@@ -1,111 +1,78 @@
-# mcp-whatsapp
+# mcp-wpp
 
-Single Go binary that runs as an HTTP MCP daemon (default `127.0.0.1:8765`) wrapping [whatsmeow](https://github.com/tulir/whatsmeow) to expose a personal WhatsApp account as MCP tools. `wpp-mcp serve` tracks WhatsApp events, caches messages locally, serves MCP at `/mcp`, and hosts the pairing UI at `/pair`. MCP clients connect over stateless Streamable HTTP (`server.WithStateLess(true)`; MCP 2026-07-28 and older revisions, no `Mcp-Session-Id`).
+A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through [whatsmeow](https://github.com/tulir/whatsmeow), keeps an encrypted local cache, and exposes it to MCP clients with per-chat consent. `wpp-mcp serve` runs the daemon (stateless Streamable HTTP at `/mcp`, operator pages and admin API). `wpp-mcp stdio` bridges stdio MCP clients to it. Forked from sealjay/mcp-whatsapp.
 
 ## Structure
 
 ```text
-cmd/wpp-mcp/       login, serve, smoke subcommands
-internal/client/        whatsmeow client wrapper (send, download, events, history, features)
-internal/daemon/        HTTP server, pairing state machine, /pair endpoint
-internal/mcp/           mark3labs/mcp-go v1 server + tool registrations
-internal/media/         OGG analysis + ffmpeg shell-out
-internal/security/      path allowlisting, filename sanitisation, log redaction
-internal/store/         SQLite cache + queries + LID resolution + formatters
-scripts/mdtest-parity.sh  whatsmeow API drift canary
+cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, keygen, encrypt, open-ui, tools, healthcheck, smoke
+internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features
+internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
+internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
+internal/mcp/        mcp-go server: tool registrations, access middleware, confirmation (outbox), profiles, catalog
+internal/store/      SQLite cache: queries, access policy (scoped views), FTS5 index, outbox, digest, retention
+internal/transcribe/ OpenAI-compatible speech-to-text client
+internal/security/   path allowlisting, filename sanitising, log redaction
+e2e/                 end-to-end tests against the real binary (build tag e2e)
+docs/                tools.md (generated), systemd/launchd units, Claude Code hook
 ```
 
-Data lives under `./store/` (override with `-store DIR`): `messages.db`, `whatsapp.db` (session), and `.lock`. To force a re-sync, delete both databases and re-run `login`. The binary is `bin/wpp-mcp`.
+The store directory (`-store`, `WPP_MCP_STORE`) holds `messages.db`, `whatsapp.db` (session and Signal keys), `token`, `.lock`, the media cache (`<chat>/<hex(message id)>/<file>`) and `uploads/` (the media root).
 
-## Subcommands
+## Security invariants
 
-- `login` pairs the device via QR (or `-phone` for a pairing code) and writes the session to `store/whatsapp.db`.
-- `serve` starts the HTTP daemon on `127.0.0.1:<port>`, tracks events, serves MCP at `/mcp`, and hosts the pairing UI at `/pair`. It holds `store/.lock` while running and is mutually exclusive with another `serve` instance using the same store directory.
-- `smoke` boot-tests without connecting to WhatsApp.
+These are what the project is for. A change that weakens one needs an explicit decision, not a side effect.
 
-`serve -read-only` (env `WPP_MCP_READ_ONLY=1`) excludes WhatsApp mutation tools at registration; direct calls to removed tools are rejected. Downloads and history requests remain available, and `/pair` is still an operator lifecycle surface. When adding a tool, classify it explicitly in `internal/mcp/tools.go`; tests require every registered tool to have a reviewed classification.
+1. **Every tool is classified three times**, and tests fail otherwise: read-only or not (`readOnlyToolAccess` in `internal/mcp/tools.go`), a group (`toolGroup` in `internal/mcp/profiles.go`), and an access scope (`toolAccessScope` in `internal/mcp/access.go`). Unclassified tools fail closed.
+2. **MCP reads go through `s.store()`**, the scoped store view. A new query that returns chat content must add `s.scopeClause(...)` (or `accessFilter`) in `internal/store`. A tool that names a chat must declare its argument in `toolAccessScope`, so the middleware checks it. Resources bypass tool middleware, so they check `allowedChat` themselves.
+3. **Hidden and nonexistent chats must be indistinguishable**: same error text, no counts, no names. `request_chat_access` returns only an ID.
+4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
+5. **Every HTTP route is authenticated** except `/healthz`, `/readyz` and `/ui/login`. `/mcp` and `/admin/*` take the bearer token only, never the browser cookie. State-changing pages need a CSRF token. The Host/Origin guard wraps everything.
+6. **Writes need consent**: with `-write`, tools that send or change the account create outbox proposals (`internal/mcp/outbox.go`). Only trivial self-visible actions are in `noConfirm`. Approval re-runs the access middleware.
+7. **Pairing never goes through MCP.** `pairing_status` must not return QR payloads or codes.
+8. **Logs stay redacted** through `security.Redactor`, and phone numbers are masked.
 
-## Testing
+## Build and test
+
+SQLCipher is required: `dnf install sqlcipher-devel`, `apt install libsqlcipher-dev` or `brew install sqlcipher`. The Makefile links mattn/go-sqlite3 (`-tags "libsqlite3 sqlite_fts5"`) against it through a symlink in `build/sqlcipher/`.
 
 ```bash
-make test          # unit tests
-make test-race     # with -race
-make e2e           # spawn the binary and speak JSON-RPC over HTTP (both MCP eras; fails if a session ID is minted)
-make smoke         # boot-test without connecting to WhatsApp
-make vet           # go vet
-make lint          # go vet and verify gofmt
+make build           # bin/wpp-mcp
+make lint            # go vet + gofmt
+make test            # unit tests; SQLCipher/FTS5 tests fail rather than skip (WPP_MCP_REQUIRE_CIPHER=1)
+make test-race
+make e2e             # real binary, encrypted throwaway stores, no WhatsApp account
+make smoke
+make container-test  # all of the above in Debian, for hosts without SQLCipher
+make docs            # regenerate docs/tools.md (CI fails if it is stale)
 ```
 
-Fixtures: `internal/store/testdata/seed.sql` seeds three chats and about twelve messages with direct/group, media, `is_from_me`, and LID-originated variants. Store tests use `openTestStore(t)` in `internal/store/testutil_test.go`. Keep tests isolated from a live WhatsApp account.
+A plain `go test ./...` also works: crypto and FTS tests skip, and the store falls back to LIKE search. Store tests use `openTestStore(t)` (seeded in-memory DB, `internal/store/testdata/seed.sql`). Access tests in `internal/mcp/access_test.go` show how to build a server over a real store without connecting to WhatsApp. Never point tests at a live account.
 
-## whatsmeow upgrade cadence
+When adding a tool:
 
-Check for an upstream update roughly every 30 days:
+1. Register it in the right `tools_*.go`.
+2. Classify it in the three maps above.
+3. Update the counts in `internal/mcp/tools_test.go`.
+4. Run `make docs`.
 
-```bash
-make upgrade-check
-```
+## Tool descriptions
 
-`.github/workflows/ci.yml` runs this weekly. Its `mdtest parity grep` step fails if a method called on `*whatsmeow.Client` disappears upstream. The pinned version is in `go.mod` (`go.mau.fi/whatsmeow`).
+- State the purpose, side effects, reversibility, return shape and when to use another tool. Keep it to three sentences where possible.
+- Reuse `jidDesc` / `recipientDesc` for JID arguments. Recipients take phone digits without `+`.
+- Read-only cache tools start with `offlineSafePrefix`.
+- Text results that carry message content start with `untrustedPreamble`.
 
-## Feature implementation map
+## whatsmeow upgrades
 
-The MCP tool surface has 43 tools by default and 47 when the four WhatsApp Business label tools are enabled with `serve -enable-labels` or `WPP_MCP_LABELS=1`. Read-only mode exposes 15 tools by default or 19 when labels are enabled. The label tools are read-only; transcription is excluded from read-only mode because it uploads private audio to another service.
+`make upgrade-check` bumps whatsmeow to `@main`, tidies, builds and tests. CI runs it weekly and keeps a rolling issue. `scripts/mdtest-parity.sh` fails if a whatsmeow method we call disappears.
 
-1. **LID resolution** — `internal/store/lid.go` normalises `@lid` JIDs to real phone numbers via `whatsmeow_lid_map`.
-2. **Sent-message storage** — `internal/client/send.go` persists outgoing messages after `SendMessage` returns.
-3. **Disappearing-message timers** — `internal/client/send.go` detects group ephemeral timers via `GetGroupInfo` and sets `MessageContextInfo.MessageAddOnDurationInSecs`. Individual-chat timers are not exposed by whatsmeow's store API.
-4. **Targeted history sync** — `internal/client/history.go` implements `RequestHistorySync(ctx, chatJID, fromTimestamp)`. A zero timestamp anchors on the newest cached message. Poll votes, edits and revokes in an incoming history-sync batch (`internal/client/events.go::handleHistorySync`) are applied after its messages are stored, votes before revokes.
-5. **Reactions, replies, edits, revoke, mark-read, typing, and is-on-WhatsApp** — `internal/client/features.go` wraps the corresponding whatsmeow builders (`BuildReaction`, `BuildEdit`, `BuildRevoke`) or one-shot calls (`MarkRead`, `SendChatPresence`, `IsOnWhatsApp`). Replies and reactions use the rate-limited `Client.sendMessage`; replies are cached through `persistSent`. Incoming edits and revokes (live, history sync, and our own via `EditMessage` / `DeleteMessage`) update the cached original in `internal/client/edits.go` + `internal/store/edits.go`: `edited_at` / `revoked_at` columns, only the original sender (or a group admin, for revokes) may change a row, and a revoke only sets `revoked_at` (text and media are kept; the cache never deletes a message). `StoreMessage` upserts so re-delivered messages keep edits and revokes.
-6. **Group management** — `internal/client/features_groups.go` wraps `CreateGroup`, `LeaveGroup`, `GetJoinedGroups`, `GetGroupInfo`, `UpdateGroupParticipants`, `SetGroupName`, `SetGroupTopic`, `SetGroupAnnounce`, `SetGroupLocked`, `GetGroupInviteLink`, and `JoinGroupWithLink`. Participant mutation checks admin rights against live `GetGroupInfo` and skips no-op targets. A privacy-blocked add (`AddRequest`, error 403) sends a `waE2E.GroupInviteMessage` through `checkSendRate` in `internal/client/send.go`; an invite held by the limiter remains `invite_required` with a retry hint. Adds to LID-addressed groups go one participant per request because replies may identify a newcomer only by an unknown LID.
-7. **Blocklist** — `internal/client/features_blocklist.go` wraps `GetBlocklist` and `UpdateBlocklist`. Every call fetches the full list; it does not cache a `dhash`. `get_blocklist` retains its `DHash`/`JIDs`/`Contacts` JSON shape; phone numbers come from `BlocklistItem.PN` or fall back to the LID map.
-8. **Polls, contact cards, and view-once** — poll and contact-card sends live in `internal/client/features_media.go`; polls, votes, and contact cards use the rate-limited `Client.sendMessage`. vCard 3.0 synthesis is in `internal/client/vcard.go`; `ViewOnce` is plumbed through `SendMediaOptions` in `internal/client/send.go`. `SendPoll` uses `wa.BuildPollCreation` to attach the required `MessageSecret`. Vote ingest and tally are in `internal/client/events.go` (`handlePollVote` decrypts live and history votes; `aggregatedPollVotes` reads the decrypted `PollUpdates` WhatsApp attaches to a history-synced poll; both record through `recordPollVote`, which keys votes by account, not device; `migrateSchema` re-keys device-suffixed votes from older versions) and `internal/store/poll.go`. `pollCreation` reads polls from `PollCreationMessage` and its V2/V3/V5/V6 fields (WhatsApp sends single-answer polls as V3). Encrypted history updates wait in the persistent `pending_poll_votes` inbox for their poll and key, including across chunks and restarts. Replay is owner-scoped; the inbox is capped globally at 1,000 updates with 16 KiB payloads and no expiry, with oldest-first eviction and a warning about incomplete totals. Supplied history keys and PN/LID mappings are stored synchronously before replay, which uses existing events and atomically applies each tally update with its acknowledgement.
-9. **Presence, privacy, and status message** — `internal/client/features_privacy.go` implements own availability, privacy settings with strict enum validation, and the "About" status message.
-10. **Opt-in transcription** — `internal/client/transcribe.go` downloads audio, enforces the actual Ogg/Opus duration limit, and caches transcripts through `internal/store/transcripts.go`. `internal/transcribe` uploads to the configured OpenAI-compatible endpoint, rejects redirects, and requires HTTPS plus `WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1` for non-loopback services. The shared Ogg parser rejects malformed streams rather than guessing a duration.
-11. **WhatsApp Business labels** — `internal/client/labels.go` persists label edits and chat associations; full-sync events are enabled once during client construction when the opt-in flag is set. The four read-only tools live in `internal/mcp/tools_labels.go`.
-12. **Media retry for expired links** — `internal/client/mediaretry.go`. When `DownloadWithMediaRetry` (the `download_media` tool and media resource reads; plain `Download` never retries) gets HTTP 403/404/410 from the CDN (`whatsmeow.ErrMediaDownloadFailedWith403/404/410`; history-synced media links carry a signed `oe=` expiry), it sends one `SendMediaRetryReceipt` to the account's own phone, built from the cached row (ID, chat, from-me, group sender; in a LID-addressed group, per live `GetGroupInfo`, the cached phone-number sender is mapped back to its LID via the device's `LIDs.GetLIDForPN`), waits up to `defaultMediaRetryTimeout` (30 s) for the matching `*events.MediaRetry`, and decrypts it with `DecryptMediaRetryNotification`. It retries the download once, checks the decrypted payload against the cached length and SHA-256, and only then stores the new direct path (`store.UpdateMediaDirectPath`). Retry responses are matched by message ID and normalized chat JID. Concurrent calls for the same message share one receipt (`mediaRetryRegistry`); a caller's ctx only ends its own wait. On demand only: nothing retries in the background.
+## Git, versions and releases
 
-## MCP tool descriptions and Glama
-
-When adding or changing tool descriptions in `internal/mcp/tools*.go` or `internal/mcp/common.go`, follow these rules:
-
-- Every tool description states its specific purpose, side effects, reversibility, return shape, and when to use it instead of alternatives. Front-load the purpose and keep the description under three sentences where possible.
-- Parameter descriptions identify the JID/ID type, constraints, defaults, and group-only requirements. For send targets, reuse `recipientDesc`; for chat-scoped JIDs, reuse `jidDesc`.
-- A `recipient` description must say to use phone digits without a `+` prefix. WhatsApp can silently drop messages addressed to `+`-prefixed numbers.
-- Use consistent terms: "message", "chat", "recipient", and "JID". Do not repeat what the schema already says.
-- Tool-level descriptions are full sentences ending with a period. Argument descriptions are sentence fragments without terminal punctuation.
-- Read-only local SQLite tools use `offlineSafePrefix`.
-- Avoid descriptions that merely restate a function name or omit side effects, reversibility, return shape, ID/JID guidance, or alternatives. For destructive actions, disclose permanence and whether the effect can be undone.
-
-
-## Git and pull requests
-
-- This repository has no `dev` branch. Start changes from `main` on a feature branch named `feat/<slug>` or `fix-<issue>`, using a worktree under `.claude/worktrees/`.
-- Open pull requests against `main`. Squash-merge after the required checks pass, then pull, push, and remove the merged branch and worktree. Do not create a `dev` branch.
-- Keep each pull request focused. Use conventional commit messages, consistent with the repository history.
-- Run the repository's relevant checks before asking to merge. `make lint` includes `go vet` and formatting; run `make test` for unit tests. Use `make test-race`, `make e2e`, or `make smoke` when the change affects those paths.
-- Do not merge or push changes to another contributor's branch without their explicit authorisation.
-
-## Versioning and releases
-
-Semantic versioning is driven by Git tags. `Makefile` injects `git describe --tags --always --dirty` as `main.Version` through `-ldflags`; `cmd/wpp-mcp/main.go` copies that value into `internal/mcp.Version` for `serverInfo`. There is no source version file to bump; do not add a competing version authority or bump script.
-
-- **PATCH** (`v0.1.x`): bug fixes, dependency updates, and documentation.
-- **MINOR** (`v0.x.0`): new tools, features, and other non-breaking changes.
-- **MAJOR** (`vX.0.0`): breaking changes to the MCP tool surface, configuration, or store schema that require user action.
-
-While pre-1.0, a minor bump may include breaking changes under SemVer.
-
-After the release changes have merged to `main`, cut a release from a clean, up-to-date `main` checkout. Confirm `git branch --show-current` is `main` before tagging:
-
-1. Determine the bump from commits since the latest tag: breaking changes require major; a new feature or tool requires minor; otherwise use patch. An explicit `major`, `minor`, or `patch` selection overrides automatic classification.
-2. Run `make lint` and `make test`; stop if either fails.
-3. Create and push the matching `vMAJOR.MINOR.PATCH` tag.
-4. Create the GitHub release with generated notes, for example `github-account-route gh release create vX.Y.Z --generate-notes`.
-5. Report the version, release URL, and a one-line summary.
-
-Do not push feature work directly to `main`; the pull request flow above lands the release changes before tagging.
+- Branch from `main` (`feat/<slug>`, `fix/<slug>`), use conventional commits, and open focused pull requests. CI must pass (lint, unit, e2e, container, secrets scan, docs freshness).
+- Versions come from Git tags (`git describe` → `main.Version` via `-ldflags`). Do not add a version file. Pre-1.0, a minor bump may break things; mark those commits with `!` and a `BREAKING CHANGE:` footer.
+- Release: tag `vX.Y.Z` on a clean `main`. `.github/workflows/release.yml` publishes multi-arch images to `ghcr.io/murandido/mcp-wpp`.
 
 ## Language
 
-Use British English in prose and American English in code.
+Repository content (code, comments, docs, commit messages) is in English.

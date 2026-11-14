@@ -45,7 +45,7 @@ func newDaemonClient(storeDir, addr string) (*daemonClient, error) {
 		return nil, fmt.Errorf("read daemon token (is `wpp-mcp serve` using the same -store?): %w", err)
 	}
 	transport := &http.Transport{Proxy: nil, ResponseHeaderTimeout: 0}
-	base := "http://" + addr
+	base := "http://" + dialableAddr(addr)
 	if path, ok := strings.CutPrefix(addr, "unix:"); ok {
 		base = "http://localhost"
 		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -54,6 +54,20 @@ func newDaemonClient(storeDir, addr string) (*daemonClient, error) {
 		}
 	}
 	return &daemonClient{base: base, token: token, http: &http.Client{Transport: transport}}, nil
+}
+
+// dialableAddr maps a wildcard listen address (0.0.0.0:P, [::]:P, :P) to
+// loopback, which is both what a local client should dial and a Host the
+// daemon's Host/Origin guard accepts.
+func dialableAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	return addr
 }
 
 // do sends an authenticated request. The caller closes the response body.

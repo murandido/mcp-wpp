@@ -129,7 +129,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		allowedMediaRoot = filepath.Join(absStore, "uploads")
 	}
 	allowedMediaRoot = filepath.Clean(allowedMediaRoot)
-	if mkErr := os.MkdirAll(allowedMediaRoot, 0o755); mkErr != nil {
+	if mkErr := os.MkdirAll(allowedMediaRoot, 0o700); mkErr != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not create media root %q: %v\n", allowedMediaRoot, mkErr)
 	}
 	// Operator UX: make the media root obvious on boot so users know where

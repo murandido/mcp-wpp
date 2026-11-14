@@ -1,0 +1,60 @@
+# wpp-mcp with Docker Compose.
+#
+# First run:
+#   mkdir -p data secrets
+#   (umask 077; docker run --rm ghcr.io/murandido/mcp-wpp:latest keygen -out - > secrets/wpp_mcp_key)
+#   # back up secrets/wpp_mcp_key: without it data/ cannot be read
+#   docker compose up -d
+#   docker compose exec wpp-mcp wpp-mcp pair -phone +<number>
+#   docker compose exec wpp-mcp wpp-mcp access list
+#
+# MCP clients on the host connect with:
+#   docker compose exec -T wpp-mcp wpp-mcp stdio
+# or over HTTP at http://127.0.0.1:8765/mcp with the token in data/store/token.
+
+services:
+  wpp-mcp:
+    image: ghcr.io/murandido/mcp-wpp:latest
+    build: .
+    restart: unless-stopped
+    # Run as your own user so the bind-mounted data and the 0600 key file are
+    # readable; set WPP_UID/WPP_GID if yours are not 1000.
+    user: "${WPP_UID:-1000}:${WPP_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    # Publish on the host's loopback only. The daemon still requires the
+    # bearer token and rejects non-loopback Host/Origin headers.
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./data:/data
+    secrets:
+      - wpp_mcp_key
+    environment:
+      WPP_MCP_STORE: /data/store
+      WPP_MCP_KEY_FILE: /run/secrets/wpp_mcp_key
+      # WPP_MCP_WRITE: "1"          # allow sends (each one still waits for your approval)
+      # WPP_MCP_RETAIN_DAYS: "90"   # delete cached messages older than 90 days
+      # WPP_MCP_PAIR_PHONE: "+5511999999999"  # print a pairing code on first start
+      # Local transcription (needs the transcribe profile and WPP_MCP_WRITE):
+      # WPP_MCP_TRANSCRIBE_URL: http://speaches:8000
+      # WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP: "1"
+      # WPP_MCP_TRANSCRIBE_MODEL: Systran/faster-whisper-small
+
+  # Optional local speech-to-text: `docker compose --profile transcribe up -d`.
+  # Voice notes never leave your machine. Pin the image tag you trust.
+  speaches:
+    profiles: [transcribe]
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    restart: unless-stopped
+    # Not published on the host: only wpp-mcp reaches it on the compose network.
+    # Models download on first use; mount a volume to keep them (see the
+    # speaches documentation for the cache path).
+
+secrets:
+  wpp_mcp_key:
+    file: ./secrets/wpp_mcp_key

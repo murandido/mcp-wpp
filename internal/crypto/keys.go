@@ -97,14 +97,23 @@ func isMountedSecret(path string) bool {
 	return false
 }
 
+// NewKeyHex returns a new random master key, hex-encoded.
+func NewKeyHex() (string, error) {
+	master := make([]byte, KeySize)
+	if _, err := rand.Read(master); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(master), nil
+}
+
 // GenerateKeyFile writes a new random master key to path with mode 0600. It
 // never overwrites an existing file: losing the old key loses the store.
 func GenerateKeyFile(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create key dir: %w", err)
 	}
-	master := make([]byte, KeySize)
-	if _, err := rand.Read(master); err != nil {
+	key, err := NewKeyHex()
+	if err != nil {
 		return err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -114,7 +123,7 @@ func GenerateKeyFile(path string) error {
 		}
 		return err
 	}
-	if _, err := f.WriteString(hex.EncodeToString(master) + "\n"); err != nil {
+	if _, err := f.WriteString(key + "\n"); err != nil {
 		f.Close()
 		os.Remove(path)
 		return err

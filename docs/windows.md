@@ -17,3 +17,7 @@ go build -o .\bin\wpp-mcp.exe .\cmd\wpp-mcp
 ```
 
 The direct Go command avoids requiring GNU Make and Bash on Windows. If CGO is disabled or GCC is missing from `PATH`, the build reports that `go-sqlite3` requires cgo.
+
+## Encryption on Windows
+
+This build links plain SQLite, so it cannot encrypt the store: run it with `-no-encryption` and keep the store on a BitLocker-protected drive. For an encrypted store on Windows, use the Docker image or WSL with SQLCipher installed (`make build`).

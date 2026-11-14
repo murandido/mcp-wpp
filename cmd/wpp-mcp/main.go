@@ -27,15 +27,16 @@ Usage:
   wpp-mcp -version
 
 Commands:
+  keygen       Create the encryption key file (back it up!)
   serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
-  access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
-  outbox       Approve or reject what the AI proposed to send (with serve -write)
-  stdio        Bridge an MCP client over stdin/stdout to the running daemon
-  open-ui      Print a single-use browser login link (-page /access for the access page)
-  keygen       Create a new encryption key file (back it up!)
-  encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
   pair         Link WhatsApp: -phone +<number> for a pairing code, or a QR in the terminal
-  login        Pair directly without a daemon (pair falls back to this automatically)
+  access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
+  stdio        Bridge an MCP client over stdin/stdout to the running daemon
+  outbox       Approve or reject what the AI proposed to send (with serve -write)
+  open-ui      Print a single-use browser login link (-page /pair, /access or /outbox)
+  encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
+  login        Pair without a daemon (pair falls back to this automatically)
+  tools        List the MCP tools and their groups (-markdown for docs)
   healthcheck  Probe local daemon readiness (for container health checks)
   smoke        Non-interactive boot check (CI)
   help         Show this help
@@ -66,6 +67,7 @@ serve stores in <store>/token (or WPP_MCP_TOKEN).
 `
 
 func main() {
+	privateUmask()
 	mcpsrv.Version = strings.TrimPrefix(Version, "v")
 
 	// Handle -version / --version before subcommand dispatch so it works
@@ -129,6 +131,8 @@ func main() {
 		code = runOutbox(storeDir, rest)
 	case "access":
 		code = runAccess(storeDir, rest)
+	case "tools":
+		code = runTools(rest)
 	case "keygen":
 		code = runKeygen(rest)
 	case "encrypt":

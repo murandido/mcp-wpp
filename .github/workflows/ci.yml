@@ -25,26 +25,41 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install SQLCipher and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev ffmpeg
       - run: go mod download
-      - name: gofmt
-        run: |
-          diff=$(gofmt -l .)
-          if [ -n "$diff" ]; then
-            echo "gofmt differences:"
-            echo "$diff"
-            gofmt -d .
-            exit 1
-          fi
-      - run: go vet ./...
-      - run: go test -race -coverprofile=cover.out ./...
-      - run: go tool cover -func=cover.out | tail -1
-      - run: go build ./...
+      - name: Lint (go vet + gofmt)
+        run: make lint
+      - name: Unit tests (race, coverage)
+        run: make test-cover
+      - name: Smoke test (encrypted store)
+        run: make smoke
+      - name: End-to-end tests
+        run: make e2e
+      - name: Tool reference is up to date
+        run: make docs && git diff --exit-code docs/tools.md
       - name: mdtest parity grep
         # Fails if a whatsmeow method we call disappears upstream — an early
         # signal that the API was removed or renamed.
         run: bash ./scripts/mdtest-parity.sh
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  container:
+    # The image is the main distribution channel; make sure it still builds
+    # and its full test stage passes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target test -t wpp-mcp:test .
 
   upgrade-check:
     if: github.event_name == 'schedule'
@@ -57,16 +72,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install SQLCipher and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev ffmpeg
       - name: Record pinned version
         run: echo "OLD_PIN=$(go list -m -f '{{.Version}}' go.mau.fi/whatsmeow)" >> "$GITHUB_ENV"
       - run: go get go.mau.fi/whatsmeow@main
       - run: go mod tidy
       - name: Record upstream version
         run: echo "NEW_PIN=$(go list -m -f '{{.Version}}' go.mau.fi/whatsmeow)" >> "$GITHUB_ENV"
-      - run: go build ./...
-      - run: go test ./...
+      - run: make build test
       - name: Record build/test status
         if: always()
         run: echo "STATUS=${{ job.status }}" >> "$GITHUB_ENV"

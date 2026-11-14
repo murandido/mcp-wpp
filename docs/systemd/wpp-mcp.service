@@ -1,23 +1,52 @@
-# wpp-mcp systemd user unit template.
+# wpp-mcp systemd user unit.
 #
-# 1. Copy this file to ~/.config/systemd/user/wpp-mcp.service
-# 2. Replace {{PATH_TO_REPO}} and {{STORE_DIR}} with absolute paths.
-# 3. (Optional) adjust WPP_MCP_ADDR / WPP_MCP_MEDIA_ROOT / WPP_MCP_DEBUG.
-# 4. systemctl --user daemon-reload
-# 5. systemctl --user enable --now wpp-mcp
-# 6. On first install, open http://127.0.0.1:8765/pair in a browser.
+# 1. Build and install the binary:  make build && install -m 0755 bin/wpp-mcp ~/.local/bin/
+# 2. Create the key outside the store and back it up somewhere safe:
+#      wpp-mcp -key-file ~/.config/wpp-mcp/key keygen
+# 3. Copy this file to ~/.config/systemd/user/wpp-mcp.service
+# 4. systemctl --user daemon-reload && systemctl --user enable --now wpp-mcp
+# 5. Pair once:   wpp-mcp -store ~/.local/share/wpp-mcp pair -phone +<number>
+# 6. Allow chats: wpp-mcp -store ~/.local/share/wpp-mcp access list
+#
+# The key reaches the service as a systemd credential, so it never sits in
+# the unit's environment. With systemd >= 250 you can seal it to the TPM
+# instead: `systemd-creds encrypt --name=wpp_mcp_key ~/.config/wpp-mcp/key
+# wpp_mcp_key.cred` and use LoadCredentialEncrypted= below.
 
 [Unit]
-Description=wpp-mcp daemon (HTTP MCP + event tracker)
+Description=wpp-mcp: WhatsApp MCP daemon
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart={{PATH_TO_REPO}}/bin/wpp-mcp -store {{STORE_DIR}} serve
-Environment=WPP_MCP_ADDR=127.0.0.1:8765
-Environment=WPP_MCP_MEDIA_ROOT={{STORE_DIR}}/uploads
+ExecStart=%h/.local/bin/wpp-mcp -store %h/.local/share/wpp-mcp serve
+# To listen on a 0600 Unix socket instead of 127.0.0.1:8765, append
+# `-addr unix:%t/wpp-mcp/wpp-mcp.sock` and export the same value as
+# WPP_MCP_ADDR for the CLI and `wpp-mcp stdio`.
+LoadCredential=wpp_mcp_key:%h/.config/wpp-mcp/key
+# LoadCredentialEncrypted=wpp_mcp_key:%h/.config/wpp-mcp/wpp_mcp_key.cred
+# Optional:
+# Environment=WPP_MCP_RETAIN_DAYS=90
+# Environment=WPP_MCP_WRITE=1
 Restart=on-failure
 RestartSec=10s
+
+# Hardening. The daemon needs its store, its socket and the network.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/wpp-mcp
+RuntimeDirectory=wpp-mcp
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=default.target

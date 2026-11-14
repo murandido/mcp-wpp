@@ -10,3 +10,4 @@ cover.out
 /build/
 /secrets/
 *.key
+/data/
