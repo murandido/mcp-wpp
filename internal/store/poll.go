@@ -185,7 +185,7 @@ func (s *Store) QueuePendingPollVote(ctx context.Context, vote PendingPollVote) 
 	if err != nil {
 		return nil, 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `INSERT INTO pending_poll_votes
 		(owner_jid, chat_jid, sender_jid, message_id, timestamp, received_at, payload)
 		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
@@ -322,7 +322,7 @@ func (s *Store) CompletePendingPollVote(ctx context.Context, pending PendingPoll
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	result, err := tx.ExecContext(ctx, dropPendingPollVoteSQL, pending.OwnerJID, pending.ChatJID, pending.MessageID, pending.ReceivedAt)
 	if err != nil {
 		return err

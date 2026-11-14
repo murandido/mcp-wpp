@@ -21,7 +21,7 @@ func (s *Store) PurgeBefore(ctx context.Context, cutoff time.Time) ([]PurgedMess
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.QueryContext(ctx, "SELECT id, chat_jid FROM messages WHERE timestamp < ?", cutoff)
 	if err != nil {

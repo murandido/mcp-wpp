@@ -167,7 +167,7 @@ func parseRecipient(recipient string) (types.JID, error) {
 	if strings.Contains(canonical, "@") {
 		jid, err := types.ParseJID(canonical)
 		if err != nil {
-			return types.JID{}, fmt.Errorf("Error parsing JID: %v", err)
+			return types.JID{}, fmt.Errorf("parse JID: %w", err)
 		}
 		return jid, nil
 	}
@@ -192,7 +192,7 @@ func (c *Client) attachMedia(ctx context.Context, msg *waProto.Message, mediaPat
 
 	resp, err := c.wa.Upload(ctx, mediaData, mediaType)
 	if err != nil {
-		return fmt.Errorf("Error uploading media: %v", err)
+		return fmt.Errorf("upload media: %w", err)
 	}
 	c.log.Infof("Media uploaded: url=%s bytes=%d", c.redactor.URL(resp.URL), resp.FileLength)
 
@@ -217,7 +217,7 @@ func (c *Client) attachMedia(ctx context.Context, msg *waProto.Message, mediaPat
 		if strings.Contains(mimeType, "ogg") {
 			s, w, aerr := media.AnalyzeOggOpus(mediaData)
 			if aerr != nil {
-				return fmt.Errorf("Failed to analyze Ogg Opus file: %v", aerr)
+				return fmt.Errorf("analyze Ogg Opus file: %w", aerr)
 			}
 			seconds = s
 			waveform = w

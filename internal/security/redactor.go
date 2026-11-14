@@ -147,10 +147,7 @@ func maskPhones(s string) string {
 
 // last5 returns the last 5 characters of s, ignoring a leading "+".
 func last5(s string) string {
-	digits := s
-	if strings.HasPrefix(digits, "+") {
-		digits = digits[1:]
-	}
+	digits := strings.TrimPrefix(s, "+")
 	if len(digits) <= 5 {
 		return digits
 	}

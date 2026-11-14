@@ -71,7 +71,7 @@ func (h *outboxHandlers) mount(mux *http.ServeMux) {
 		if _, err := h.decide(r); err != nil {
 			back += "?error=" + template.URLQueryEscaper(err.Error())
 		}
-		http.Redirect(w, r, back, http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther) //nolint:gosec // G710: always the local /outbox page; only the query is user text
 	})
 }
 

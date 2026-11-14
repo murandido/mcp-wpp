@@ -237,7 +237,10 @@ func (a *uiAuth) mount(mux *http.ServeMux) {
 			http.Error(w, "login link is invalid or expired: run `wpp-mcp open-ui` again", http.StatusUnauthorized)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{
+		// Secure is set whenever the request arrived over HTTPS; the default
+		// loopback listener is plain HTTP, where a Secure cookie would not be
+		// stored by every browser.
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see above
 			Name:     sessionCookie,
 			Value:    id,
 			Path:     "/",
@@ -252,7 +255,7 @@ func (a *uiAuth) mount(mux *http.ServeMux) {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, next, http.StatusSeeOther)
+		http.Redirect(w, r, next, http.StatusSeeOther) //nolint:gosec // G710: next passed safeLanding, so it is a local page path
 	})
 }
 

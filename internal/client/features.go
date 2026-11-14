@@ -38,9 +38,7 @@ func (c *Client) MarkRead(ctx context.Context, chatJID string, messageIDs []stri
 	}
 
 	ids := make([]types.MessageID, len(messageIDs))
-	for i, id := range messageIDs {
-		ids[i] = types.MessageID(id)
-	}
+	copy(ids, messageIDs)
 
 	return c.wa.MarkRead(ctx, ids, time.Now(), chat, sender)
 }
@@ -65,7 +63,7 @@ func (c *Client) MarkChatRead(ctx context.Context, chatJID string, limit int) (i
 	// Group by sender JID: MarkRead is batched per (chat, sender).
 	bySender := map[string][]types.MessageID{}
 	for i, id := range rawIDs {
-		bySender[rawSenders[i]] = append(bySender[rawSenders[i]], types.MessageID(id))
+		bySender[rawSenders[i]] = append(bySender[rawSenders[i]], id)
 	}
 	count := 0
 	for senderRaw, ids := range bySender {
@@ -106,7 +104,7 @@ func (c *Client) SendReaction(ctx context.Context, chatJID, messageID, senderJID
 		}
 	}
 
-	reaction := c.wa.BuildReaction(chat, sender, types.MessageID(messageID), emoji)
+	reaction := c.wa.BuildReaction(chat, sender, messageID, emoji)
 	if _, err := c.sendMessage(ctx, chat, reaction); err != nil {
 		return fmt.Errorf("send reaction: %w", err)
 	}
@@ -173,7 +171,7 @@ func (c *Client) EditMessage(ctx context.Context, chatJID, messageID, newBody st
 	newContent := &waProto.Message{
 		Conversation: proto.String(newBody),
 	}
-	edit := c.wa.BuildEdit(chat, types.MessageID(messageID), newContent)
+	edit := c.wa.BuildEdit(chat, messageID, newContent)
 	if _, err := c.wa.SendMessage(ctx, chat, edit); err != nil {
 		return fmt.Errorf("send edit: %w", err)
 	}
@@ -200,7 +198,7 @@ func (c *Client) DeleteMessage(ctx context.Context, chatJID, messageID, senderJI
 		}
 	}
 
-	revoke := c.wa.BuildRevoke(chat, sender, types.MessageID(messageID))
+	revoke := c.wa.BuildRevoke(chat, sender, messageID)
 	if _, err := c.wa.SendMessage(ctx, chat, revoke); err != nil {
 		return fmt.Errorf("send revoke: %w", err)
 	}

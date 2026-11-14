@@ -46,7 +46,7 @@ func newOfflinePairedClient(t *testing.T, limiter *ratelimit.Limiter) (*Client, 
 	sent := &[]sentMessage{}
 	c.waSend = func(_ context.Context, to types.JID, msg *waProto.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
 		*sent = append(*sent, sentMessage{to: to, msg: msg})
-		return whatsmeow.SendResponse{ID: types.MessageID(fmt.Sprintf("SENT-%d", len(*sent)))}, nil
+		return whatsmeow.SendResponse{ID: fmt.Sprintf("SENT-%d", len(*sent))}, nil
 	}
 	return c, sent
 }

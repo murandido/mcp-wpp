@@ -142,7 +142,7 @@ func DefaultKeyPath() string {
 	}
 	if cd := os.Getenv("CREDENTIALS_DIRECTORY"); cd != "" {
 		p := filepath.Join(cd, "wpp_mcp_key")
-		if _, err := os.Stat(p); err == nil {
+		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: CREDENTIALS_DIRECTORY is set by systemd for this service
 			return p
 		}
 	}

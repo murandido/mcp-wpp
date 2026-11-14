@@ -96,13 +96,13 @@ func AnalyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 		return 0, nil, errors.New("missing Ogg end of stream")
 	}
 	if lastGranule <= uint64(preSkip) {
-		return 0, nil, errors.New("Ogg granule position does not exceed Opus pre-skip")
+		return 0, nil, errors.New("invalid Ogg stream: granule position does not exceed the Opus pre-skip")
 	}
 
 	// Opus granules always count 48 kHz samples, regardless of the input-rate hint.
 	seconds := (lastGranule - uint64(preSkip) + 47999) / 48000
 	if seconds > math.MaxUint32 {
-		return 0, nil, errors.New("Ogg duration exceeds the supported range")
+		return 0, nil, errors.New("invalid Ogg stream: duration exceeds the supported range")
 	}
 	duration = uint32(seconds)
 
@@ -116,7 +116,7 @@ func PlaceholderWaveform(duration uint32) []byte {
 	const waveformLength = 64
 	waveform := make([]byte, waveformLength)
 
-	r := rand.New(rand.NewPCG(uint64(duration), 0))
+	r := rand.New(rand.NewPCG(uint64(duration), 0)) //nolint:gosec // G404: a decorative waveform, deterministic on purpose
 
 	baseAmplitude := 35.0
 	d := int(duration)

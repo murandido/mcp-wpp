@@ -101,6 +101,13 @@ func (c *Client) SealExistingCache() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Read through an os.Root so a symlink swapped in during the walk cannot
+	// make us read (and seal a copy of) a file outside the store.
+	rooted, err := os.OpenRoot(root)
+	if err != nil {
+		return 0, err
+	}
+	defer rooted.Close()
 	sealed := 0
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -117,7 +124,7 @@ func (c *Client) SealExistingCache() (int, error) {
 		if strings.Count(filepath.ToSlash(rel), "/") != 2 || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".download-") {
 			return nil
 		}
-		raw, err := os.ReadFile(path)
+		raw, err := rooted.ReadFile(rel)
 		if err != nil {
 			return err
 		}

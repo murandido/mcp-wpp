@@ -530,7 +530,7 @@ func rekeyDevicePollVoters(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("begin poll voter rekey: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`INSERT INTO poll_votes
 		 (poll_message_id, poll_chat_jid, voter_jid, selected_options_json, timestamp)
 		 SELECT poll_message_id, poll_chat_jid,

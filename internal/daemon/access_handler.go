@@ -241,6 +241,6 @@ func (h *accessHandlers) form(action func(*http.Request) error) http.HandlerFunc
 			}
 			back += sep + "error=" + template.URLQueryEscaper(err.Error())
 		}
-		http.Redirect(w, r, back, http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther) //nolint:gosec // G710: always the local /access page; only the query is user text
 	}
 }

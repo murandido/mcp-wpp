@@ -364,6 +364,9 @@ func checkParticipantPermission(info *types.GroupInfo, self *types.GroupParticip
 // JID to its known LID (or an empty JID), which finds members whose number the
 // group hides and catches the same person given as both number and LID.
 func planParticipantChange(info *types.GroupInfo, self *types.GroupParticipant, inputs []string, jids []types.JID, action whatsmeow.ParticipantChange, lidFor func(types.JID) types.JID) ([]ParticipantOutcome, []plannedChange, error) {
+	if len(inputs) != len(jids) {
+		return nil, nil, fmt.Errorf("internal error: %d inputs for %d participants", len(inputs), len(jids))
+	}
 	outcomes := make([]ParticipantOutcome, len(jids))
 	var pending []plannedChange
 	seen := make(map[types.JID]int, len(jids))
@@ -379,11 +382,11 @@ func planParticipantChange(info *types.GroupInfo, self *types.GroupParticipant, 
 		}
 		identity = identity.ToNonAD()
 		if prev, dup := seen[identity]; dup {
-			return nil, nil, fmt.Errorf("participants %q and %q are the same person; list each once", inputs[prev], inputs[i])
+			return nil, nil, fmt.Errorf("participants %q and %q are the same person; list each once", inputs[prev], inputs[i]) //nolint:gosec // G602: len(inputs) == len(jids) is checked above
 		}
 		seen[identity] = i
 
-		outcomes[i] = ParticipantOutcome{Input: inputs[i], JID: jid.String()}
+		outcomes[i] = ParticipantOutcome{Input: inputs[i], JID: jid.String()} //nolint:gosec // G602: len(inputs) == len(jids) is checked above
 		if member != nil {
 			outcomes[i].JID = member.JID.String()
 		}

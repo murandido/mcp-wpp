@@ -180,7 +180,7 @@ func phoneAnswer(t *testing.T, msgID string, mediaKey []byte, notif *waMmsRetry.
 		t.Fatalf("encrypt notification: %v", err)
 	}
 	return &events.MediaRetry{
-		Ciphertext: ciphertext, IV: iv, MessageID: types.MessageID(msgID),
+		Ciphertext: ciphertext, IV: iv, MessageID: msgID,
 		ChatID: types.NewJID("120363000000000001", types.GroupServer),
 	}
 }
@@ -198,7 +198,7 @@ func successAnswer(t *testing.T, msgID, directPath string) *events.MediaRetry {
 func TestDownload_MediaRetryRecoversExpiredLink(t *testing.T) {
 	f := newRetryFixture(t, "M-RETRY-OK")
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 
 	got := f.c.DownloadWithMediaRetry(context.Background(), f.msgID, retryGroupJID, "")
@@ -247,7 +247,7 @@ func TestDownload_MediaRetryRecoversExpiredLink(t *testing.T) {
 func TestDownload_MediaRetryDoesNotPersistUnverifiedPath(t *testing.T) {
 	f := newRetryFixture(t, "M-RETRY-BAD-PAYLOAD")
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 	f.c.downloadMedia = func(_ context.Context, media whatsmeow.DownloadableMessage) ([]byte, error) {
 		if media.GetDirectPath() == retryOldPath {
@@ -290,7 +290,7 @@ func TestDownload_MediaRetryRejectsMismatchedMediaKey(t *testing.T) {
 	defer server.Close()
 	f.c.wa = whatsmeow.NewClient(&wmstore.Device{}, NewStderrLogger("test", "ERROR", false))
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 	f.c.downloadMedia = func(_ context.Context, media whatsmeow.DownloadableMessage) ([]byte, error) {
 		f.mu.Lock()
@@ -338,7 +338,7 @@ func TestDownload_MediaRetryPhoneFailures(t *testing.T) {
 			})
 		}, "the phone no longer has this media"},
 		{"unencrypted not-available error", func(t *testing.T, id string) *events.MediaRetry {
-			return &events.MediaRetry{MessageID: types.MessageID(id), Error: &events.MediaRetryError{Code: 2}}
+			return &events.MediaRetry{MessageID: id, Error: &events.MediaRetryError{Code: 2}}
 		}, "the phone no longer has this media"},
 		{"general error", func(t *testing.T, id string) *events.MediaRetry {
 			return phoneAnswer(t, id, retryMediaKey, &waMmsRetry.MediaRetryNotification{
@@ -365,7 +365,7 @@ func TestDownload_MediaRetryPhoneFailures(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newRetryFixture(t, "M-RETRY-FAIL")
-			f.answer = func(info *types.MessageInfo) *events.MediaRetry { return tc.answer(t, string(info.ID)) }
+			f.answer = func(info *types.MessageInfo) *events.MediaRetry { return tc.answer(t, info.ID) }
 
 			got := f.c.DownloadWithMediaRetry(context.Background(), f.msgID, retryGroupJID, "")
 			if got.Success {
@@ -522,7 +522,7 @@ func TestDownload_MediaRetryRetriesDownloadOnce(t *testing.T) {
 	f := newRetryFixture(t, "M-RETRY-ONCE")
 	f.cdnErr = func(string) error { return whatsmeow.ErrMediaDownloadFailedWith403 }
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 
 	got := f.c.DownloadWithMediaRetry(context.Background(), f.msgID, retryGroupJID, "")
@@ -543,7 +543,7 @@ func TestDownload_MediaRetryRetriesDownloadOnce(t *testing.T) {
 func TestDownload_PlainDownloadNeverAsksThePhone(t *testing.T) {
 	f := newRetryFixture(t, "M-RETRY-PLAIN")
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 
 	got := f.c.Download(context.Background(), f.msgID, retryGroupJID, "")
@@ -699,7 +699,7 @@ func TestDownload_MediaRetryNamesLIDSenderInLIDGroup(t *testing.T) {
 		return &types.GroupInfo{JID: jid, AddressingMode: types.AddressingModeLID}, nil
 	}
 	f.answer = func(info *types.MessageInfo) *events.MediaRetry {
-		return successAnswer(t, string(info.ID), retryNewPath)
+		return successAnswer(t, info.ID, retryNewPath)
 	}
 
 	got := f.c.DownloadWithMediaRetry(context.Background(), f.msgID, retryGroupJID, "")
