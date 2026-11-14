@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 	"go.mau.fi/whatsmeow"
 )
 

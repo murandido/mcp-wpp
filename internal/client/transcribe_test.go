@@ -14,8 +14,8 @@ import (
 
 	"go.mau.fi/whatsmeow"
 
-	"github.com/sealjay/mcp-whatsapp/internal/store"
-	"github.com/sealjay/mcp-whatsapp/internal/transcribe"
+	"github.com/murandido/mcp-wpp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/transcribe"
 )
 
 const trJID, trMsg = "447700000123@s.whatsapp.net", "AUDIO-1"

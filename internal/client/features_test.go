@@ -15,8 +15,8 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/sealjay/mcp-whatsapp/internal/ratelimit"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/ratelimit"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 // newOfflinePairedClient returns a connected-looking Client with a message

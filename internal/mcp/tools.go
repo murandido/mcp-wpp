@@ -78,6 +78,6 @@ func (s *Server) registerTools() {
 	if s.labelsEnabled {
 		s.registerLabelTools()
 	}
-	// Speech-to-text for voice notes (opt-in; needs WHATSAPP_MCP_TRANSCRIBE_URL).
+	// Speech-to-text for voice notes (opt-in; needs WPP_MCP_TRANSCRIBE_URL).
 	s.registerTranscribeTools()
 }

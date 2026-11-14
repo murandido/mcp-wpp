@@ -13,11 +13,11 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
-	"github.com/sealjay/mcp-whatsapp/internal/daemon"
-	mcpsrv "github.com/sealjay/mcp-whatsapp/internal/mcp"
-	"github.com/sealjay/mcp-whatsapp/internal/security"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/daemon"
+	mcpsrv "github.com/murandido/mcp-wpp/internal/mcp"
+	"github.com/murandido/mcp-wpp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 func runServe(storeDir string, redactor *security.Redactor, args []string) int {
@@ -27,29 +27,29 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		readOnly      bool
 		labelsEnabled bool
 	)
-	if value := os.Getenv("WHATSAPP_MCP_READ_ONLY"); value != "" {
+	if value := os.Getenv("WPP_MCP_READ_ONLY"); value != "" {
 		var err error
 		readOnly, err = strconv.ParseBool(value)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "WHATSAPP_MCP_READ_ONLY must be a boolean (for example, 1 or 0)")
+			fmt.Fprintln(os.Stderr, "WPP_MCP_READ_ONLY must be a boolean (for example, 1 or 0)")
 			return 2
 		}
 	}
-	if value := os.Getenv("WHATSAPP_MCP_LABELS"); value != "" {
+	if value := os.Getenv("WPP_MCP_LABELS"); value != "" {
 		var err error
 		labelsEnabled, err = strconv.ParseBool(value)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "WHATSAPP_MCP_LABELS must be a boolean (for example, 1 or 0)")
+			fmt.Fprintln(os.Stderr, "WPP_MCP_LABELS must be a boolean (for example, 1 or 0)")
 			return 2
 		}
 	}
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.StringVar(&addr, "addr", "", "HTTP bind address (default: 127.0.0.1:8765, env WHATSAPP_MCP_ADDR)")
+	fs.StringVar(&addr, "addr", "", "HTTP bind address (default: 127.0.0.1:8765, env WPP_MCP_ADDR)")
 	fs.BoolVar(&allowRemote, "allow-remote", false, "allow binding to a non-loopback address")
 	fullHistoryFlag := registerFullHistory(fs)
-	fs.BoolVar(&readOnly, "read-only", readOnly, "exclude tools that send or mutate WhatsApp (env WHATSAPP_MCP_READ_ONLY)")
-	fs.BoolVar(&labelsEnabled, "enable-labels", labelsEnabled, "enable WhatsApp Business label sync and tools (env WHATSAPP_MCP_LABELS)")
+	fs.BoolVar(&readOnly, "read-only", readOnly, "exclude tools that send or mutate WhatsApp (env WPP_MCP_READ_ONLY)")
+	fs.BoolVar(&labelsEnabled, "enable-labels", labelsEnabled, "enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -70,9 +70,9 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	// editors and curl can hit the daemon without extra setup.
 	var authToken string
 	if allowRemote {
-		authToken = os.Getenv("WHATSAPP_MCP_TOKEN")
+		authToken = os.Getenv("WPP_MCP_TOKEN")
 		if authToken == "" {
-			fmt.Fprintln(os.Stderr, "-allow-remote requires WHATSAPP_MCP_TOKEN to be set in the environment")
+			fmt.Fprintln(os.Stderr, "-allow-remote requires WPP_MCP_TOKEN to be set in the environment")
 			return 2
 		}
 	}
@@ -92,7 +92,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintf(os.Stderr, "resolve store dir: %v\n", err)
 		return 1
 	}
-	allowedMediaRoot := os.Getenv("WHATSAPP_MCP_MEDIA_ROOT")
+	allowedMediaRoot := os.Getenv("WPP_MCP_MEDIA_ROOT")
 	if allowedMediaRoot == "" {
 		allowedMediaRoot = filepath.Join(absStore, "uploads")
 	}
@@ -152,7 +152,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 	d.SetMCPMount(mcpServer.AttachHTTP)
 
-	fmt.Fprintf(os.Stderr, "whatsapp-mcp listening on http://%s (MCP at /mcp, pairing at /pair)\n", addr)
+	fmt.Fprintf(os.Stderr, "wpp-mcp listening on http://%s (MCP at /mcp, pairing at /pair)\n", addr)
 	if !c.IsLoggedIn() {
 		fmt.Fprintf(os.Stderr, "unpaired: open http://%s/pair to scan QR\n", addr)
 	}
@@ -163,12 +163,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	return 0
 }
 
-// resolveAddr applies the -addr / WHATSAPP_MCP_ADDR / default precedence.
+// resolveAddr applies the -addr / WPP_MCP_ADDR / default precedence.
 func resolveAddr(flagValue string) string {
 	if flagValue != "" {
 		return flagValue
 	}
-	if env := os.Getenv("WHATSAPP_MCP_ADDR"); env != "" {
+	if env := os.Getenv("WPP_MCP_ADDR"); env != "" {
 		return env
 	}
 	return "127.0.0.1:8765"

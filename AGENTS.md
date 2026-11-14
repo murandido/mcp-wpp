@@ -1,11 +1,11 @@
 # mcp-whatsapp
 
-Single Go binary that runs as an HTTP MCP daemon (default `127.0.0.1:8765`) wrapping [whatsmeow](https://github.com/tulir/whatsmeow) to expose a personal WhatsApp account as MCP tools. `whatsapp-mcp serve` tracks WhatsApp events, caches messages locally, serves MCP at `/mcp`, and hosts the pairing UI at `/pair`. MCP clients connect over stateless Streamable HTTP (`server.WithStateLess(true)`; MCP 2026-07-28 and older revisions, no `Mcp-Session-Id`).
+Single Go binary that runs as an HTTP MCP daemon (default `127.0.0.1:8765`) wrapping [whatsmeow](https://github.com/tulir/whatsmeow) to expose a personal WhatsApp account as MCP tools. `wpp-mcp serve` tracks WhatsApp events, caches messages locally, serves MCP at `/mcp`, and hosts the pairing UI at `/pair`. MCP clients connect over stateless Streamable HTTP (`server.WithStateLess(true)`; MCP 2026-07-28 and older revisions, no `Mcp-Session-Id`).
 
 ## Structure
 
 ```text
-cmd/whatsapp-mcp/       login, serve, smoke subcommands
+cmd/wpp-mcp/       login, serve, smoke subcommands
 internal/client/        whatsmeow client wrapper (send, download, events, history, features)
 internal/daemon/        HTTP server, pairing state machine, /pair endpoint
 internal/mcp/           mark3labs/mcp-go v1 server + tool registrations
@@ -15,7 +15,7 @@ internal/store/         SQLite cache + queries + LID resolution + formatters
 scripts/mdtest-parity.sh  whatsmeow API drift canary
 ```
 
-Data lives under `./store/` (override with `-store DIR`): `messages.db`, `whatsapp.db` (session), and `.lock`. To force a re-sync, delete both databases and re-run `login`. The binary is `bin/whatsapp-mcp`.
+Data lives under `./store/` (override with `-store DIR`): `messages.db`, `whatsapp.db` (session), and `.lock`. To force a re-sync, delete both databases and re-run `login`. The binary is `bin/wpp-mcp`.
 
 ## Subcommands
 
@@ -23,7 +23,7 @@ Data lives under `./store/` (override with `-store DIR`): `messages.db`, `whatsa
 - `serve` starts the HTTP daemon on `127.0.0.1:<port>`, tracks events, serves MCP at `/mcp`, and hosts the pairing UI at `/pair`. It holds `store/.lock` while running and is mutually exclusive with another `serve` instance using the same store directory.
 - `smoke` boot-tests without connecting to WhatsApp.
 
-`serve -read-only` (env `WHATSAPP_MCP_READ_ONLY=1`) excludes WhatsApp mutation tools at registration; direct calls to removed tools are rejected. Downloads and history requests remain available, and `/pair` is still an operator lifecycle surface. When adding a tool, classify it explicitly in `internal/mcp/tools.go`; tests require every registered tool to have a reviewed classification.
+`serve -read-only` (env `WPP_MCP_READ_ONLY=1`) excludes WhatsApp mutation tools at registration; direct calls to removed tools are rejected. Downloads and history requests remain available, and `/pair` is still an operator lifecycle surface. When adding a tool, classify it explicitly in `internal/mcp/tools.go`; tests require every registered tool to have a reviewed classification.
 
 ## Testing
 
@@ -50,7 +50,7 @@ make upgrade-check
 
 ## Feature implementation map
 
-The MCP tool surface has 43 tools by default and 47 when the four WhatsApp Business label tools are enabled with `serve -enable-labels` or `WHATSAPP_MCP_LABELS=1`. Read-only mode exposes 15 tools by default or 19 when labels are enabled. The label tools are read-only; transcription is excluded from read-only mode because it uploads private audio to another service.
+The MCP tool surface has 43 tools by default and 47 when the four WhatsApp Business label tools are enabled with `serve -enable-labels` or `WPP_MCP_LABELS=1`. Read-only mode exposes 15 tools by default or 19 when labels are enabled. The label tools are read-only; transcription is excluded from read-only mode because it uploads private audio to another service.
 
 1. **LID resolution** — `internal/store/lid.go` normalises `@lid` JIDs to real phone numbers via `whatsmeow_lid_map`.
 2. **Sent-message storage** — `internal/client/send.go` persists outgoing messages after `SendMessage` returns.
@@ -61,7 +61,7 @@ The MCP tool surface has 43 tools by default and 47 when the four WhatsApp Busin
 7. **Blocklist** — `internal/client/features_blocklist.go` wraps `GetBlocklist` and `UpdateBlocklist`. Every call fetches the full list; it does not cache a `dhash`. `get_blocklist` retains its `DHash`/`JIDs`/`Contacts` JSON shape; phone numbers come from `BlocklistItem.PN` or fall back to the LID map.
 8. **Polls, contact cards, and view-once** — poll and contact-card sends live in `internal/client/features_media.go`; polls, votes, and contact cards use the rate-limited `Client.sendMessage`. vCard 3.0 synthesis is in `internal/client/vcard.go`; `ViewOnce` is plumbed through `SendMediaOptions` in `internal/client/send.go`. `SendPoll` uses `wa.BuildPollCreation` to attach the required `MessageSecret`. Vote ingest and tally are in `internal/client/events.go` (`handlePollVote` decrypts live and history votes; `aggregatedPollVotes` reads the decrypted `PollUpdates` WhatsApp attaches to a history-synced poll; both record through `recordPollVote`, which keys votes by account, not device; `migrateSchema` re-keys device-suffixed votes from older versions) and `internal/store/poll.go`. `pollCreation` reads polls from `PollCreationMessage` and its V2/V3/V5/V6 fields (WhatsApp sends single-answer polls as V3). Encrypted history updates wait in the persistent `pending_poll_votes` inbox for their poll and key, including across chunks and restarts. Replay is owner-scoped; the inbox is capped globally at 1,000 updates with 16 KiB payloads and no expiry, with oldest-first eviction and a warning about incomplete totals. Supplied history keys and PN/LID mappings are stored synchronously before replay, which uses existing events and atomically applies each tally update with its acknowledgement.
 9. **Presence, privacy, and status message** — `internal/client/features_privacy.go` implements own availability, privacy settings with strict enum validation, and the "About" status message.
-10. **Opt-in transcription** — `internal/client/transcribe.go` downloads audio, enforces the actual Ogg/Opus duration limit, and caches transcripts through `internal/store/transcripts.go`. `internal/transcribe` uploads to the configured OpenAI-compatible endpoint, rejects redirects, and requires HTTPS plus `WHATSAPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1` for non-loopback services. The shared Ogg parser rejects malformed streams rather than guessing a duration.
+10. **Opt-in transcription** — `internal/client/transcribe.go` downloads audio, enforces the actual Ogg/Opus duration limit, and caches transcripts through `internal/store/transcripts.go`. `internal/transcribe` uploads to the configured OpenAI-compatible endpoint, rejects redirects, and requires HTTPS plus `WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1` for non-loopback services. The shared Ogg parser rejects malformed streams rather than guessing a duration.
 11. **WhatsApp Business labels** — `internal/client/labels.go` persists label edits and chat associations; full-sync events are enabled once during client construction when the opt-in flag is set. The four read-only tools live in `internal/mcp/tools_labels.go`.
 12. **Media retry for expired links** — `internal/client/mediaretry.go`. When `DownloadWithMediaRetry` (the `download_media` tool and media resource reads; plain `Download` never retries) gets HTTP 403/404/410 from the CDN (`whatsmeow.ErrMediaDownloadFailedWith403/404/410`; history-synced media links carry a signed `oe=` expiry), it sends one `SendMediaRetryReceipt` to the account's own phone, built from the cached row (ID, chat, from-me, group sender; in a LID-addressed group, per live `GetGroupInfo`, the cached phone-number sender is mapped back to its LID via the device's `LIDs.GetLIDForPN`), waits up to `defaultMediaRetryTimeout` (30 s) for the matching `*events.MediaRetry`, and decrypts it with `DecryptMediaRetryNotification`. It retries the download once, checks the decrypted payload against the cached length and SHA-256, and only then stores the new direct path (`store.UpdateMediaDirectPath`). Retry responses are matched by message ID and normalized chat JID. Concurrent calls for the same message share one receipt (`mediaRetryRegistry`); a caller's ctx only ends its own wait. On demand only: nothing retries in the background.
 
@@ -77,7 +77,6 @@ When adding or changing tool descriptions in `internal/mcp/tools*.go` or `intern
 - Read-only local SQLite tools use `offlineSafePrefix`.
 - Avoid descriptions that merely restate a function name or omit side effects, reversibility, return shape, ID/JID guidance, or alternatives. For destructive actions, disclose permanence and whether the effect can be undone.
 
-Keep `glama.json` valid against `https://glama.ai/mcp/schemas/server.json` and list the current maintainers. The existing `Sealjay` maintainer metadata matches the other local MCP servers; do not add fields or maintainers without a concrete reason.
 
 ## Git and pull requests
 
@@ -89,7 +88,7 @@ Keep `glama.json` valid against `https://glama.ai/mcp/schemas/server.json` and l
 
 ## Versioning and releases
 
-Semantic versioning is driven by Git tags. `Makefile` injects `git describe --tags --always --dirty` as `main.Version` through `-ldflags`; `cmd/whatsapp-mcp/main.go` copies that value into `internal/mcp.Version` for `serverInfo`. There is no source version file to bump; do not add a competing version authority or bump script.
+Semantic versioning is driven by Git tags. `Makefile` injects `git describe --tags --always --dirty` as `main.Version` through `-ldflags`; `cmd/wpp-mcp/main.go` copies that value into `internal/mcp.Version` for `serverInfo`. There is no source version file to bump; do not add a competing version authority or bump script.
 
 - **PATCH** (`v0.1.x`): bug fixes, dependency updates, and documentation.
 - **MINOR** (`v0.x.0`): new tools, features, and other non-breaking changes.

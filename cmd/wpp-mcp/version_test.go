@@ -14,7 +14,7 @@ import (
 func TestVersionFlag(t *testing.T) {
 	t.Parallel()
 
-	bin := filepath.Join(t.TempDir(), "whatsapp-mcp")
+	bin := filepath.Join(t.TempDir(), "wpp-mcp")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
@@ -32,7 +32,7 @@ func TestVersionFlag(t *testing.T) {
 			t.Fatalf("%s exited non-zero: %v\n%s", flag, err, out)
 		}
 		got := strings.TrimSpace(string(out))
-		want := "whatsapp-mcp 1.2.3-test"
+		want := "wpp-mcp 1.2.3-test"
 		if got != want {
 			t.Errorf("%s output = %q, want %q", flag, got, want)
 		}
@@ -43,7 +43,7 @@ func TestVersionFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("-version serve exited non-zero: %v\n%s", err, out)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(string(out)), "whatsapp-mcp ") {
+	if !strings.HasPrefix(strings.TrimSpace(string(out)), "wpp-mcp ") {
 		t.Errorf("-version serve output = %q, want version line", out)
 	}
 }

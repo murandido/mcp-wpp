@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/client"
 )
 
 //go:embed templates/*.tmpl

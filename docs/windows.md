@@ -13,7 +13,7 @@ In PowerShell, enable CGO and build the executable directly with Go:
 ```powershell
 go env -w CGO_ENABLED=1
 New-Item -ItemType Directory -Force bin
-go build -o .\bin\whatsapp-mcp.exe .\cmd\whatsapp-mcp
+go build -o .\bin\wpp-mcp.exe .\cmd\wpp-mcp
 ```
 
 The direct Go command avoids requiring GNU Make and Bash on Windows. If CGO is disabled or GCC is missing from `PATH`, the build reports that `go-sqlite3` requires cgo.

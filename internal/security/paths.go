@@ -57,7 +57,7 @@ func resolveRoot(allowedRoot string) (string, error) {
 // field names the offending parameter in the error.
 func confine(field, resolved, root string) error {
 	if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
-		return fmt.Errorf("%s %q is outside allowed root %q; set WHATSAPP_MCP_MEDIA_ROOT or place the file under that root", field, resolved, root)
+		return fmt.Errorf("%s %q is outside allowed root %q; set WPP_MCP_MEDIA_ROOT or place the file under that root", field, resolved, root)
 	}
 	return nil
 }

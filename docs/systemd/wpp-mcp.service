@@ -1,0 +1,23 @@
+# wpp-mcp systemd user unit template.
+#
+# 1. Copy this file to ~/.config/systemd/user/wpp-mcp.service
+# 2. Replace {{PATH_TO_REPO}} and {{STORE_DIR}} with absolute paths.
+# 3. (Optional) adjust WPP_MCP_ADDR / WPP_MCP_MEDIA_ROOT / WPP_MCP_DEBUG.
+# 4. systemctl --user daemon-reload
+# 5. systemctl --user enable --now wpp-mcp
+# 6. On first install, open http://127.0.0.1:8765/pair in a browser.
+
+[Unit]
+Description=wpp-mcp daemon (HTTP MCP + event tracker)
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart={{PATH_TO_REPO}}/bin/wpp-mcp -store {{STORE_DIR}} serve
+Environment=WPP_MCP_ADDR=127.0.0.1:8765
+Environment=WPP_MCP_MEDIA_ROOT={{STORE_DIR}}/uploads
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target

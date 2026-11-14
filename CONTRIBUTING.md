@@ -17,7 +17,7 @@ Protocol, session-management, and media-transfer issues usually belong in whatsm
 ## Build and test
 
 ```bash
-make build        # writes ./bin/whatsapp-mcp
+make build        # writes ./bin/wpp-mcp
 make lint         # go vet and verify gofmt
 make test         # unit tests
 make test-race    # race detector
@@ -28,7 +28,7 @@ make smoke        # boot-test without connecting to WhatsApp
 Run the checks relevant to your change. The unit tests use local fixtures and do not need a WhatsApp account. For manual integration testing, pair a device with:
 
 ```bash
-./bin/whatsapp-mcp login
+./bin/wpp-mcp login
 ```
 
 `make upgrade-check` updates the whatsmeow dependency to `@main`, tidies modules, builds, and tests. It changes `go.mod` and `go.sum`; use it when working on an intentional dependency update and review those changes before committing.

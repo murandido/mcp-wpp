@@ -3,7 +3,7 @@
 # fmt uses process substitution; force bash so `make lint` works under a POSIX /bin/sh
 SHELL := /bin/bash
 
-BIN := ./bin/whatsapp-mcp
+BIN := ./bin/wpp-mcp
 PKGS := ./...
 GO := go
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -11,7 +11,7 @@ LDFLAGS := -X main.Version=$(VERSION)
 
 build:
 	mkdir -p bin
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/whatsapp-mcp
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wpp-mcp
 
 test:
 	$(GO) test $(PKGS)

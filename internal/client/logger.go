@@ -11,7 +11,7 @@ import (
 
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 var (

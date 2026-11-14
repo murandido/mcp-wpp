@@ -12,7 +12,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 // Identifiers and content that must never reach non-debug logs.

@@ -6,7 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 // registerQueryTools wires read-only query tools: list_chats, get_chat,

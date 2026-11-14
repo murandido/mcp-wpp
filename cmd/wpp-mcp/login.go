@@ -8,17 +8,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
-	"github.com/sealjay/mcp-whatsapp/internal/security"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 func runLogin(storeDir string, redactor *security.Redactor, args []string) int {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "whatsapp-mcp login: pair this device via QR (or a phone-number pairing code with -phone); writes session to <store>/whatsapp.db. Ctrl-C aborts.")
-		fmt.Fprintln(os.Stderr, "\nUsage: whatsapp-mcp [-store DIR] login [-phone +<international number>] [-full-history]")
+		fmt.Fprintln(os.Stderr, "wpp-mcp login: pair this device via QR (or a phone-number pairing code with -phone); writes session to <store>/whatsapp.db. Ctrl-C aborts.")
+		fmt.Fprintln(os.Stderr, "\nUsage: wpp-mcp [-store DIR] login [-phone +<international number>] [-full-history]")
 		fmt.Fprintln(os.Stderr)
 		fs.PrintDefaults()
 	}
@@ -77,6 +77,6 @@ func runLogin(storeDir string, redactor *security.Redactor, args []string) int {
 			return 1
 		}
 	}
-	fmt.Fprintln(os.Stderr, "Paired successfully. You can now run 'whatsapp-mcp serve'.")
+	fmt.Fprintln(os.Stderr, "Paired successfully. You can now run 'wpp-mcp serve'.")
 	return 0
 }

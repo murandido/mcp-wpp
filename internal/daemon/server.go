@@ -14,7 +14,7 @@ import (
 )
 
 // pairDriver is the minimal surface the Server needs from the underlying
-// WhatsApp client. Production wiring (cmd/whatsapp-mcp/production_driver.go)
+// WhatsApp client. Production wiring (cmd/wpp-mcp/production_driver.go)
 // satisfies this via *client.Client. Tests substitute a fake.
 type pairDriver interface {
 	IsLoggedIn() bool
@@ -216,7 +216,7 @@ func authMiddleware(next http.Handler, token string) http.Handler {
 		if requiresAuth(r.URL.Path) {
 			got := r.Header.Get("Authorization")
 			if subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="whatsapp-mcp"`)
+				w.Header().Set("WWW-Authenticate", `Bearer realm="wpp-mcp"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}

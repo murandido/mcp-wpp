@@ -10,7 +10,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 // messageChange is an edit of an earlier message or its deletion for

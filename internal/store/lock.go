@@ -7,7 +7,7 @@ import (
 
 // ErrLocked is returned by TryLock when another process already holds the
 // advisory lock on the store directory.
-var ErrLocked = errors.New("another whatsapp-mcp instance is already running against this store directory")
+var ErrLocked = errors.New("another wpp-mcp instance is already running against this store directory")
 
 // FileLock is a filesystem-level advisory lock that prevents two `serve`
 // processes from racing on the same SQLite files. WhatsApp itself only

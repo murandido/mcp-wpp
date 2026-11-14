@@ -7,7 +7,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/client"
 )
 
 // registerGroupTools wires every group-management MCP tool.

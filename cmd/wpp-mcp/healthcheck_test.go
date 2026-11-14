@@ -23,7 +23,7 @@ func TestHealthcheckUsesLocalReadiness(t *testing.T) {
 		t.Fatalf("unready: got %d", got)
 	}
 	ready = true
-	t.Setenv("WHATSAPP_MCP_ADDR", addr)
+	t.Setenv("WPP_MCP_ADDR", addr)
 	if got := runHealthcheck(nil); got != 0 {
 		t.Fatalf("ready via environment: got %d", got)
 	}

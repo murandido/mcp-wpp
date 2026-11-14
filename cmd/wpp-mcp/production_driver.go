@@ -8,7 +8,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/client"
 )
 
 type pairingSession interface {

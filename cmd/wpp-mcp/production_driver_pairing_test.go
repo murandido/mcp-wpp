@@ -16,7 +16,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/client"
 )
 
 type fakePairingSession struct {

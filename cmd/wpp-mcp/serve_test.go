@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 func TestIsLoopbackAddr(t *testing.T) {
@@ -28,7 +28,7 @@ func TestIsLoopbackAddr(t *testing.T) {
 }
 
 func TestRunServe_RejectsInvalidReadOnlyEnvironment(t *testing.T) {
-	t.Setenv("WHATSAPP_MCP_READ_ONLY", "invalid")
+	t.Setenv("WPP_MCP_READ_ONLY", "invalid")
 	output, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
@@ -44,13 +44,13 @@ func TestRunServe_RejectsInvalidReadOnlyEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != 2 || !strings.Contains(string(raw), "WHATSAPP_MCP_READ_ONLY") {
+	if code != 2 || !strings.Contains(string(raw), "WPP_MCP_READ_ONLY") {
 		t.Fatalf("invalid read-only config: code %d, stderr %s", code, raw)
 	}
 }
 
 func TestRunServe_RejectsInvalidLabelsEnvironment(t *testing.T) {
-	t.Setenv("WHATSAPP_MCP_LABELS", "invalid")
+	t.Setenv("WPP_MCP_LABELS", "invalid")
 	output, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestRunServe_RejectsInvalidLabelsEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != 2 || !strings.Contains(string(raw), "WHATSAPP_MCP_LABELS") {
+	if code != 2 || !strings.Contains(string(raw), "WPP_MCP_LABELS") {
 		t.Fatalf("invalid labels config: code %d, stderr %s", code, raw)
 	}
 }

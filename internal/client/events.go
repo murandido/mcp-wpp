@@ -20,8 +20,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 // StartEventHandler registers the event handler on the underlying whatsmeow

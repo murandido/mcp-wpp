@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sealjay/mcp-whatsapp/internal/media"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
-	"github.com/sealjay/mcp-whatsapp/internal/transcribe"
+	"github.com/murandido/mcp-wpp/internal/media"
+	"github.com/murandido/mcp-wpp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/transcribe"
 )
 
 // TranscriptionEnabled reports whether a speech-to-text service is configured.
@@ -99,7 +99,7 @@ func (c *Client) checkAudioDuration(path string) error {
 		return fmt.Errorf("analyze Ogg audio: %w", err)
 	}
 	if limit := c.transcribeCfg.MaxSecondsOrDefault(); uint64(secs) > uint64(limit) {
-		return fmt.Errorf("audio is %ds long; the transcription limit is %ds (WHATSAPP_MCP_TRANSCRIBE_MAX_SECONDS)", secs, limit)
+		return fmt.Errorf("audio is %ds long; the transcription limit is %ds (WPP_MCP_TRANSCRIBE_MAX_SECONDS)", secs, limit)
 	}
 	return nil
 }

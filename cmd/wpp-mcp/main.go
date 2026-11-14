@@ -1,4 +1,4 @@
-// Command whatsapp-mcp is a single-binary WhatsApp bridge that runs as an
+// Command wpp-mcp is a single-binary WhatsApp bridge that runs as an
 // HTTP MCP daemon (default 127.0.0.1:8765). Subcommands:
 //
 //	login  — one-shot interactive QR pairing (writes session to store/whatsapp.db)
@@ -12,18 +12,18 @@ import (
 	"os"
 	"strings"
 
-	mcpsrv "github.com/sealjay/mcp-whatsapp/internal/mcp"
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	mcpsrv "github.com/murandido/mcp-wpp/internal/mcp"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
 var Version = "dev"
 
-const usage = `whatsapp-mcp: WhatsApp bridge over MCP
+const usage = `wpp-mcp: WhatsApp bridge over MCP
 
 Usage:
-  whatsapp-mcp <command> [flags]
-  whatsapp-mcp -version
+  wpp-mcp <command> [flags]
+  wpp-mcp -version
 
 Commands:
   login   Pair this device with your WhatsApp account via QR code (terminal)
@@ -38,12 +38,12 @@ Global flags (before the command):
   -version     Print version and exit
 
 Serve-specific flags (after 'serve'):
-  -addr host:port   HTTP bind address (default: 127.0.0.1:8765, env WHATSAPP_MCP_ADDR)
+  -addr host:port   HTTP bind address (default: 127.0.0.1:8765, env WPP_MCP_ADDR)
   -allow-remote     Allow binding to a non-loopback address (dangerous)
 Pairing flag (after 'login' or 'serve'; only affects a new pairing):
-  -full-history     Ask the phone for a full history sync (env WHATSAPP_MCP_FULL_HISTORY)
-  -read-only        Exclude WhatsApp mutation tools (env WHATSAPP_MCP_READ_ONLY)
-  -enable-labels    Enable WhatsApp Business label sync and tools (env WHATSAPP_MCP_LABELS)
+  -full-history     Ask the phone for a full history sync (env WPP_MCP_FULL_HISTORY)
+  -read-only        Exclude WhatsApp mutation tools (env WPP_MCP_READ_ONLY)
+  -enable-labels    Enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)
 `
 
 func main() {
@@ -53,7 +53,7 @@ func main() {
 	// regardless of the command that follows (or if none is given).
 	for _, a := range os.Args[1:] {
 		if a == "-version" || a == "--version" {
-			fmt.Printf("whatsapp-mcp %s\n", Version)
+			fmt.Printf("wpp-mcp %s\n", Version)
 			os.Exit(0)
 		}
 		// Stop scanning at the first non-flag token: that's the subcommand,
@@ -67,7 +67,7 @@ func main() {
 		storeDir string
 		debug    bool
 	)
-	fs := flag.NewFlagSet("whatsapp-mcp", flag.ContinueOnError)
+	fs := flag.NewFlagSet("wpp-mcp", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&storeDir, "store", "./store", "directory holding messages.db and whatsapp.db")
 	fs.BoolVar(&debug, "debug", false, "show full JIDs, names and message bodies in logs (default: redacted)")
@@ -82,7 +82,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if os.Getenv("WHATSAPP_MCP_DEBUG") == "1" {
+	if os.Getenv("WPP_MCP_DEBUG") == "1" {
 		debug = true
 	}
 	redactor := &security.Redactor{Debug: debug}

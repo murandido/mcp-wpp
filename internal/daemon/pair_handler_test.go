@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/client"
 )
 
 type fakeResetter struct {

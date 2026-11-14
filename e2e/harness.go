@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// harness runs ./bin/whatsapp-mcp serve on an OS-assigned loopback port
+// harness runs ./bin/wpp-mcp serve on an OS-assigned loopback port
 // and offers a typed MCP tool-call helper.
 type harness struct {
 	t    *testing.T
@@ -29,7 +29,7 @@ type harness struct {
 func newHarness(t *testing.T, serveArgs ...string) *harness {
 	t.Helper()
 	repo := repoRoot(t)
-	bin := filepath.Join(repo, "bin", "whatsapp-mcp")
+	bin := filepath.Join(repo, "bin", "wpp-mcp")
 	storeDir := t.TempDir()
 	port := freePort(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)

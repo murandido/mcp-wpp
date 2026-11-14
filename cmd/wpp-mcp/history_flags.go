@@ -8,7 +8,7 @@ import (
 
 // envFullHistory is the environment equivalent of -full-history. A flag given
 // on the command line wins over it.
-const envFullHistory = "WHATSAPP_MCP_FULL_HISTORY"
+const envFullHistory = "WPP_MCP_FULL_HISTORY"
 
 // registerFullHistory adds -full-history, shared by login and serve (both can pair).
 func registerFullHistory(fs *flag.FlagSet) *bool {

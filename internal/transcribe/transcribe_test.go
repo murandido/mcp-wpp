@@ -222,19 +222,19 @@ func TestEndpoint_Normalisation(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_URL", " http://127.0.0.1:9000 ")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_MODEL", "small")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_LANGUAGE", "es")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_TOKEN", "secret")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_MAX_SECONDS", "120")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_ALLOW_REMOTE", "1")
+	t.Setenv("WPP_MCP_TRANSCRIBE_URL", " http://127.0.0.1:9000 ")
+	t.Setenv("WPP_MCP_TRANSCRIBE_MODEL", "small")
+	t.Setenv("WPP_MCP_TRANSCRIBE_LANGUAGE", "es")
+	t.Setenv("WPP_MCP_TRANSCRIBE_TOKEN", "secret")
+	t.Setenv("WPP_MCP_TRANSCRIBE_MAX_SECONDS", "120")
+	t.Setenv("WPP_MCP_TRANSCRIBE_ALLOW_REMOTE", "1")
 	c := ConfigFromEnv()
 	if !c.Enabled() || c.URL != "http://127.0.0.1:9000" || c.Model != "small" || c.Language != "es" ||
 		c.Token != "secret" || c.MaxSeconds != 120 || !c.AllowRemote {
 		t.Fatalf("%+v", c)
 	}
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_URL", "")
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_MAX_SECONDS", "abc")
+	t.Setenv("WPP_MCP_TRANSCRIBE_URL", "")
+	t.Setenv("WPP_MCP_TRANSCRIBE_MAX_SECONDS", "abc")
 	c = ConfigFromEnv()
 	if c.Enabled() || c.MaxSecondsOrDefault() != defaultMaxSeconds {
 		t.Fatalf("defaults: %+v", c)

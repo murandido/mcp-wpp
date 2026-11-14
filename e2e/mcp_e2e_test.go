@@ -64,7 +64,7 @@ func TestHTTP_ReadOnlyMode(t *testing.T) {
 		{"explicit_disable", "1", []string{"-read-only=false"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("WHATSAPP_MCP_READ_ONLY", tc.env)
+			t.Setenv("WPP_MCP_READ_ONLY", tc.env)
 			h := newHarness(t, tc.args...)
 			h.initializeMCP()
 			result := h.callTool("get_status", map[string]any{})
@@ -90,14 +90,14 @@ func TestHTTP_ReadOnlyMode(t *testing.T) {
 }
 
 func TestHTTP_TranscriptionNotConfigured(t *testing.T) {
-	t.Setenv("WHATSAPP_MCP_TRANSCRIBE_URL", "")
+	t.Setenv("WPP_MCP_TRANSCRIBE_URL", "")
 	h := newHarness(t)
 	h.initializeMCP()
 	result := h.callTool("transcribe_audio", map[string]any{
 		"message_id": "AUDIO-1",
 		"chat_jid":   "447700000123@s.whatsapp.net",
 	})
-	if !result.IsError || !strings.Contains(result.Text, "WHATSAPP_MCP_TRANSCRIBE_URL") {
+	if !result.IsError || !strings.Contains(result.Text, "WPP_MCP_TRANSCRIBE_URL") {
 		t.Fatalf("expected an actionable configuration error, got %+v", result)
 	}
 	t.Logf("First-use response: %s", result.Text)

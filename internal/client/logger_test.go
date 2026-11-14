@@ -11,7 +11,7 @@ import (
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 // whatsmeow logs full JIDs in its own lines, for example at WARN in

@@ -44,7 +44,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/sealjay/mcp-whatsapp
+          images: ghcr.io/murandido/mcp-wpp
           tags: |
             type=semver,pattern={{version}}
           flavor: |
@@ -61,8 +61,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ steps.version.outputs.value }}
-          cache-from: type=registry,ref=ghcr.io/sealjay/mcp-whatsapp:buildcache-${{ matrix.arch }}
-          cache-to: type=registry,ref=ghcr.io/sealjay/mcp-whatsapp:buildcache-${{ matrix.arch }},mode=max
+          cache-from: type=registry,ref=ghcr.io/murandido/mcp-wpp:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/murandido/mcp-wpp:buildcache-${{ matrix.arch }},mode=max
           # Keep the runtime apt-get update/upgrade fresh on each release.
           no-cache-filters: runtime
           sbom: true
@@ -86,14 +86,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/sealjay/mcp-whatsapp
+          images: ghcr.io/murandido/mcp-wpp
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Publish multi-platform manifest
         env:
-          IMAGE: ghcr.io/sealjay/mcp-whatsapp
+          IMAGE: ghcr.io/murandido/mcp-wpp
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           mapfile -t tags < <(printf '%s\n' "$TAGS" | awk 'NF && !seen[$0]++')

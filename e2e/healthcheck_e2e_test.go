@@ -26,7 +26,7 @@ func TestHealthcheckBinary(t *testing.T) {
 	defer server.Close()
 	addr := strings.TrimPrefix(server.URL, "http://")
 	store := filepath.Join(t.TempDir(), "unused")
-	bin := filepath.Join(repoRoot(t), "bin", "whatsapp-mcp")
+	bin := filepath.Join(repoRoot(t), "bin", "wpp-mcp")
 	run := func() error {
 		return exec.Command(bin, "-store", store, "healthcheck", "-addr", addr).Run()
 	}

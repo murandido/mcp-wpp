@@ -11,7 +11,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 func TestNormalizeIncomingMessage_LIDOriginSender(t *testing.T) {

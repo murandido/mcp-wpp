@@ -21,10 +21,10 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/sealjay/mcp-whatsapp/internal/ratelimit"
-	"github.com/sealjay/mcp-whatsapp/internal/security"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
-	"github.com/sealjay/mcp-whatsapp/internal/transcribe"
+	"github.com/murandido/mcp-wpp/internal/ratelimit"
+	"github.com/murandido/mcp-wpp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/transcribe"
 )
 
 // Config configures a new Client.

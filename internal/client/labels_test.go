@@ -7,7 +7,7 @@ import (
 
 	wmstore "go.mau.fi/whatsmeow/store"
 
-	"github.com/sealjay/mcp-whatsapp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/security"
 )
 
 func TestNewWAClient_ConfiguresFullSyncEventsBeforeConnect(t *testing.T) {

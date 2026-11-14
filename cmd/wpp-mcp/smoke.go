@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sealjay/mcp-whatsapp/internal/client"
-	mcpsrv "github.com/sealjay/mcp-whatsapp/internal/mcp"
-	"github.com/sealjay/mcp-whatsapp/internal/security"
-	"github.com/sealjay/mcp-whatsapp/internal/store"
+	"github.com/murandido/mcp-wpp/internal/client"
+	mcpsrv "github.com/murandido/mcp-wpp/internal/mcp"
+	"github.com/murandido/mcp-wpp/internal/security"
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 // runSmoke boots the store + client (without connecting to WhatsApp servers)
@@ -18,8 +18,8 @@ func runSmoke(storeDir string, redactor *security.Redactor, args []string) int {
 	fs := flag.NewFlagSet("smoke", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "whatsapp-mcp smoke: (CI) construct MCP server without connecting to WhatsApp; fails fast on wiring regressions.")
-		fmt.Fprintln(os.Stderr, "\nUsage: whatsapp-mcp [-store DIR] smoke")
+		fmt.Fprintln(os.Stderr, "wpp-mcp smoke: (CI) construct MCP server without connecting to WhatsApp; fails fast on wiring regressions.")
+		fmt.Fprintln(os.Stderr, "\nUsage: wpp-mcp [-store DIR] smoke")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2

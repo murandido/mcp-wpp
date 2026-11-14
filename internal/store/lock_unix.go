@@ -28,7 +28,7 @@ func TryLock(storeDir string) (*FileLock, error) {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			// Wrap ErrLocked so existing errors.Is callers still match,
 			// but enrich the message with the operator-recovery hint.
-			return nil, fmt.Errorf("%w (if no other whatsapp-mcp is running, remove %s)", ErrLocked, p)
+			return nil, fmt.Errorf("%w (if no other wpp-mcp is running, remove %s)", ErrLocked, p)
 		}
 		return nil, fmt.Errorf("flock: %w", err)
 	}

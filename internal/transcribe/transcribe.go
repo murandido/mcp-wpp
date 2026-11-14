@@ -2,9 +2,9 @@
 // OpenAI-compatible POST /v1/audio/transcriptions endpoint (a local
 // whisper.cpp or faster-whisper server, LocalAI, or a hosted API).
 //
-// The feature is opt-in: it is disabled unless WHATSAPP_MCP_TRANSCRIBE_URL is
+// The feature is opt-in: it is disabled unless WPP_MCP_TRANSCRIBE_URL is
 // set. To keep audio from leaving the machine by accident, a URL whose host is
-// not loopback is refused unless WHATSAPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1.
+// not loopback is refused unless WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1.
 package transcribe
 
 import (
@@ -43,18 +43,18 @@ type Config struct {
 	Timeout     time.Duration
 }
 
-// ConfigFromEnv reads the WHATSAPP_MCP_TRANSCRIBE_* variables.
+// ConfigFromEnv reads the WPP_MCP_TRANSCRIBE_* variables.
 func ConfigFromEnv() Config {
 	c := Config{
-		URL:         strings.TrimSpace(os.Getenv("WHATSAPP_MCP_TRANSCRIBE_URL")),
-		Model:       strings.TrimSpace(os.Getenv("WHATSAPP_MCP_TRANSCRIBE_MODEL")),
-		Language:    strings.TrimSpace(os.Getenv("WHATSAPP_MCP_TRANSCRIBE_LANGUAGE")),
-		Token:       os.Getenv("WHATSAPP_MCP_TRANSCRIBE_TOKEN"),
+		URL:         strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_URL")),
+		Model:       strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_MODEL")),
+		Language:    strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_LANGUAGE")),
+		Token:       os.Getenv("WPP_MCP_TRANSCRIBE_TOKEN"),
 		MaxSeconds:  defaultMaxSeconds,
-		AllowRemote: os.Getenv("WHATSAPP_MCP_TRANSCRIBE_ALLOW_REMOTE") == "1",
+		AllowRemote: os.Getenv("WPP_MCP_TRANSCRIBE_ALLOW_REMOTE") == "1",
 		Timeout:     defaultTimeout,
 	}
-	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("WHATSAPP_MCP_TRANSCRIBE_MAX_SECONDS"))); err == nil && v > 0 {
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("WPP_MCP_TRANSCRIBE_MAX_SECONDS"))); err == nil && v > 0 {
 		c.MaxSeconds = v
 	}
 	return c
@@ -70,10 +70,10 @@ func (c Config) endpoint() (string, error) {
 	}
 	u, err := url.Parse(c.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("transcription: WHATSAPP_MCP_TRANSCRIBE_URL must be an http(s) URL, got %q", c.URL)
+		return "", fmt.Errorf("transcription: WPP_MCP_TRANSCRIBE_URL must be an http(s) URL, got %q", c.URL)
 	}
 	if !c.AllowRemote && !isLoopbackHost(u.Hostname()) {
-		return "", fmt.Errorf("transcription: refusing %q: audio would leave this machine; set WHATSAPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1 to allow a non-loopback service", u.Hostname())
+		return "", fmt.Errorf("transcription: refusing %q: audio would leave this machine; set WPP_MCP_TRANSCRIBE_ALLOW_REMOTE=1 to allow a non-loopback service", u.Hostname())
 	}
 	if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
 		return "", errors.New("transcription: non-loopback services require HTTPS to protect audio and credentials")
@@ -94,7 +94,7 @@ func isLoopbackHost(host string) bool {
 }
 
 // ErrNotConfigured is returned when no service URL is set.
-var ErrNotConfigured = errors.New("transcription is not configured: set WHATSAPP_MCP_TRANSCRIBE_URL to an OpenAI-compatible speech-to-text service")
+var ErrNotConfigured = errors.New("transcription is not configured: set WPP_MCP_TRANSCRIBE_URL to an OpenAI-compatible speech-to-text service")
 
 // Result is a transcription.
 type Result struct {

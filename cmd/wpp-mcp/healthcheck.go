@@ -12,7 +12,7 @@ import (
 
 func runHealthcheck(args []string) int {
 	fs := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
-	addr := fs.String("addr", "", "local daemon address (default: WHATSAPP_MCP_ADDR or 127.0.0.1:8765)")
+	addr := fs.String("addr", "", "local daemon address (default: WPP_MCP_ADDR or 127.0.0.1:8765)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return 2
 	}

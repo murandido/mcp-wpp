@@ -1,4 +1,4 @@
-// Package daemon runs the long-lived whatsapp-mcp process: it owns the
+// Package daemon runs the long-lived wpp-mcp process: it owns the
 // HTTP listener, mounts the MCP endpoint, serves the /pair UI, and drives
 // the pairing state machine against a whatsmeow client.
 package daemon
