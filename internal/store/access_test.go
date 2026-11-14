@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -193,5 +194,35 @@ func TestResolveChats(t *testing.T) {
 	}
 	if foldText(" João Ávila ") != "joao avila" {
 		t.Fatalf("foldText = %q", foldText(" João Ávila "))
+	}
+}
+
+// 1:1 chats are usually cached under the bare number; the address book has
+// the name people search for.
+func TestAddressBookNamesForNumberChats(t *testing.T) {
+	s := openAccessStore(t)
+	ctx := context.Background()
+	const jid = "5564990000001@s.whatsapp.net"
+	if err := s.StoreChat(jid, "5564990000001", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO whatsmeow_contacts (our_jid, their_jid, full_name, push_name) VALUES ('me', ?, 'Cauéca', 'Caue')`, jid); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"caueca", "Cauéca", "CAUE"} {
+		got, err := s.ListAccess(ctx, q, 10)
+		if err != nil || len(got) != 1 || got[0].JID != jid || got[0].Name != "Cauéca" {
+			t.Fatalf("ListAccess(%q) = %+v, %v", q, got, err)
+		}
+	}
+	if err := s.SetChatAccess(ctx, jid, AccessAllowed, ""); err != nil {
+		t.Fatal(err)
+	}
+	chats, err := s.Scoped().ListChats(ctx, "Cauéca", 10, 0, false, "name")
+	if err != nil || len(chats) != 1 || chats[0].Name != "Cauéca" {
+		t.Fatalf("list_chats by address-book name: %+v, %v", chats, err)
+	}
+	if !isNumberName("+55 64 99000-0001", jid) || isNumberName("Cauéca", jid) {
+		t.Fatal("isNumberName misclassifies")
 	}
 }

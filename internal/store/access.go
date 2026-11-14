@@ -194,10 +194,9 @@ func (s *Store) ListAccess(ctx context.Context, query string, limit int) ([]Acce
 		if err := rows.Scan(&e.JID, &e.Name, &ts, &e.State, &e.Visible); err != nil {
 			return nil, err
 		}
-		if e.Name == "" {
-			e.Name = s.addressBookName(ctx, e.JID)
-		}
-		if needle != "" && !strings.Contains(foldText(e.Name), needle) && !strings.Contains(e.JID, needle) {
+		raw := e.Name
+		e.Name = s.displayName(ctx, e.JID, raw)
+		if needle != "" && !strings.Contains(foldText(e.Name), needle) && !strings.Contains(foldText(raw), needle) && !strings.Contains(e.JID, needle) {
 			continue
 		}
 		e.LastMessageTime = ts.Time

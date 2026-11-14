@@ -200,13 +200,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, errors.New("failed to create whatsmeow client")
 	}
 
-	return &Client{
-		wa:               wa,
-		downloadMedia:    wa.Download,
-		sendMediaRetry:   wa.SendMediaRetryReceipt,
-		isConnected:      wa.IsConnected,
-		waSend:           wa.SendMessage,
-		groupInfo:        wa.GetGroupInfo,
+	c := &Client{
 		store:            cfg.Store,
 		log:              logger,
 		allowedMediaRoot: cfg.AllowedMediaRoot,
@@ -216,7 +210,39 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		labelsEnabled:    cfg.LabelsEnabled,
 		status:           ConnectionStatus{State: "disconnected", Since: time.Now().UTC()},
 		transcribeCfg:    transcribe.ConfigFromEnv(),
-	}, nil
+	}
+	c.bindWA(wa)
+	return c, nil
+}
+
+// bindWA makes wa the client's whatsmeow client, including the function
+// fields tests replace.
+func (c *Client) bindWA(wa *whatsmeow.Client) {
+	c.wa = wa
+	c.downloadMedia = wa.Download
+	c.sendMediaRetry = wa.SendMediaRetryReceipt
+	c.isConnected = wa.IsConnected
+	c.waSend = wa.SendMessage
+	c.groupInfo = wa.GetGroupInfo
+}
+
+// AdoptPairedDevice replaces the whatsmeow client after a pairing session
+// stored a device identity. whatsmeow records whether a client is paired
+// when the client is created, so the client built at startup for an unpaired
+// store would keep ignoring WhatsApp's login ("connect success without
+// pairing") and never authenticate or receive messages. Call it after a
+// successful pairing and before Connect; it is a no-op while unpaired.
+func (c *Client) AdoptPairedDevice() {
+	old := c.wa
+	if old == nil || old.Store == nil || old.Store.ID == nil {
+		return
+	}
+	old.Disconnect()
+	if c.handlerInstalled {
+		old.RemoveEventHandler(c.handlerID)
+		c.handlerInstalled = false
+	}
+	c.bindWA(newWAClient(old.Store, c.log, c.redactor, c.labelsEnabled))
 }
 
 // ValidateMediaPath is a bound convenience wrapper around

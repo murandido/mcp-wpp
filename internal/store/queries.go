@@ -147,8 +147,17 @@ func (s *Store) ListChats(ctx context.Context, query string, limit, page int, in
 	var args []any
 	b.WriteString(" WHERE 1=1")
 	if query != "" {
-		b.WriteString(" AND (LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
+		b.WriteString(" AND (LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?")
 		args = append(args, "%"+query+"%", "%"+query+"%")
+		// 1:1 chats are often stored under the bare number; match the
+		// address book too.
+		if book := s.searchContactNames("%" + query + "%"); len(book) > 0 {
+			b.WriteString(" OR chats.jid IN (" + strings.TrimSuffix(strings.Repeat("?,", len(book)), ",") + ")")
+			for jid := range book {
+				args = append(args, jid)
+			}
+		}
+		b.WriteString(")")
 	}
 	b.WriteString(s.scopeClause("chats.jid"))
 
@@ -174,6 +183,7 @@ func (s *Store) ListChats(ctx context.Context, query string, limit, page int, in
 			return nil, err
 		}
 		c.PhoneNumber = s.ResolveJIDToPhone(c.JID)
+		c.Name = s.displayName(ctx, c.JID, c.Name)
 		result = append(result, c)
 	}
 	if err := rows.Err(); err != nil {

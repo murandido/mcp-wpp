@@ -1,6 +1,10 @@
 package store
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+	"strings"
+)
 
 // contactNameExpr coalesces the whatsmeow_contacts name columns in preference
 // order: the saved address-book name first, then push name, first name, and
@@ -55,4 +59,32 @@ func (s *Store) searchContactNames(pattern string) map[string]string {
 		}
 	}
 	return out
+}
+
+// isNumberName reports whether a chat name is just the chat's phone number,
+// which is what WhatsApp stores for 1:1 chats without a pushed name.
+func isNumberName(name, jid string) bool {
+	digits := strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9':
+			return r
+		case r == '+' || r == ' ' || r == '-' || r == '(' || r == ')' || r == '.':
+			return -1
+		}
+		return 'x'
+	}, name)
+	return digits == "" || digits == jidUser(jid)
+}
+
+// displayName returns the best human name for a chat: the cached chat name,
+// unless it is empty or just the number, in which case the synced address
+// book (saved, business or pushed name) wins.
+func (s *Store) displayName(ctx context.Context, jid, name string) string {
+	if !isNumberName(name, jid) || strings.HasSuffix(jid, "@g.us") {
+		return name
+	}
+	if book := s.addressBookName(ctx, jid); book != "" {
+		return book
+	}
+	return name
 }
