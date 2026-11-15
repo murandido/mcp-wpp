@@ -56,8 +56,8 @@ func readArchive(ctx context.Context, r io.Reader, keys *crypto.Keys, dir string
 			return nil, fmt.Errorf("read archive: %w", err)
 		}
 		name := hdr.Name
-		if hdr.Typeflag != tar.TypeReg || hdr.Size < 0 || path.Clean(name) != name || path.IsAbs(name) {
-			return nil, fmt.Errorf("archive entry %q is not a plain file", name)
+		if hdr.Typeflag != tar.TypeReg || hdr.Size < 0 || !safeEntryName(name) {
+			return nil, fmt.Errorf("archive entry %q is not a plain file with a safe relative path", name)
 		}
 		if _, dup := seen[name]; dup || (name == manifestName && manifest != nil) {
 			return nil, fmt.Errorf("archive entry %q appears twice", name)
@@ -90,7 +90,10 @@ func readArchive(ctx context.Context, r io.Reader, keys *crypto.Keys, dir string
 			rel := strings.TrimPrefix(name, mediaPrefix)
 			dst := ""
 			if keepMedia {
-				dst = filepath.Join(dir, filepath.FromSlash(name))
+				var err error
+				if dst, err = within(dir, name); err != nil {
+					return nil, err
+				}
 				if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 					return nil, err
 				}
@@ -186,17 +189,29 @@ func checkMedia(tr io.Reader, hdr *tar.Header, rel string, media *crypto.MediaCi
 			if f, err = os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); err != nil {
 				return FileEntry{}, false, err
 			}
-			defer f.Close()
 			w = f
+		}
+		// fail closes and removes a partial destination; the original error
+		// is what the caller sees.
+		fail := func(err error) (FileEntry, bool, error) {
+			if f != nil {
+				_ = f.Close()
+				_ = os.Remove(dst)
+			}
+			return FileEntry{}, false, err
 		}
 		h := sha256.New()
 		head := &bytes.Buffer{}
 		n, err := io.Copy(io.MultiWriter(w, h, &prefixWriter{buf: head, max: 5}), io.LimitReader(tr, hdr.Size))
 		if err != nil {
-			return FileEntry{}, false, err
+			return fail(err)
 		}
 		if f != nil {
 			if err := f.Sync(); err != nil {
+				return fail(err)
+			}
+			if err := f.Close(); err != nil {
+				_ = os.Remove(dst)
 				return FileEntry{}, false, err
 			}
 		}
@@ -266,4 +281,29 @@ func Verify(ctx context.Context, archive string, keys *crypto.Keys, tempDir stri
 	}
 	defer os.RemoveAll(tmp)
 	return readArchive(ctx, f, keys, tmp, false)
+}
+
+// safeEntryName accepts only plain relative archive paths: no absolute
+// paths, no ".." element, no backslashes and nothing that is not already
+// clean. A crafted archive must never write outside the staging directory
+// ("zip slip").
+func safeEntryName(name string) bool {
+	return name != "" &&
+		!strings.Contains(name, "..") &&
+		!strings.Contains(name, `\`) &&
+		path.Clean(name) == name &&
+		filepath.IsLocal(filepath.FromSlash(name))
+}
+
+// within joins name under dir and checks the result is still inside dir.
+func within(dir, name string) (string, error) {
+	if !safeEntryName(name) {
+		return "", fmt.Errorf("unsafe archive path %q", name)
+	}
+	dst := filepath.Join(dir, filepath.FromSlash(name))
+	rel, err := filepath.Rel(dir, dst)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("archive path %q escapes the restore directory", name)
+	}
+	return dst, nil
 }

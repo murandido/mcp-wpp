@@ -135,12 +135,12 @@ func writeFileSync(path string, data []byte) error {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close() // the write error is what matters; the file is removed
 		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close() // the sync error is what matters; the file is removed
 		_ = os.Remove(tmp)
 		return err
 	}
