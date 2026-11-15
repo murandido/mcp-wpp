@@ -294,7 +294,7 @@ func (a *uiAuth) mount(mux *http.ServeMux) {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, next, http.StatusSeeOther) //nolint:gosec // G710: next is rebuilt by landingPath from a validated same-origin page path
+		http.Redirect(w, r, next, http.StatusSeeOther) // next is a constant from landingPages
 	})
 }
 
@@ -304,25 +304,22 @@ func safeLanding(p string) bool {
 	return ok
 }
 
-// landingPath validates a post-login destination and returns it rebuilt
-// from its parsed path and query, so the redirect never echoes raw input.
-// It must be a same-origin browser page: a leading "/" whose second
-// character is neither "/" nor "\" (both make browsers treat the rest as a
-// host), no scheme, host or user info, and a path classified as a page.
+// landingPages are the only post-login destinations. The redirect target
+// is always one of these constants, never text taken from the request.
+var landingPages = map[string]string{
+	"/pair":   "/pair",
+	"/access": "/access",
+	"/outbox": "/outbox",
+}
+
+// landingPath maps a requested post-login destination to one of
+// landingPages. Anything else, including other origins, other paths and
+// query strings, is refused.
 func landingPath(p string) (string, bool) {
-	if p == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") || strings.Contains(p, `\`) {
-		return "", false
-	}
 	u, err := url.Parse(p)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" {
 		return "", false
 	}
-	if classify(u.Path) != classBrowser {
-		return "", false
-	}
-	target := u.EscapedPath()
-	if u.RawQuery != "" {
-		target += "?" + u.RawQuery
-	}
-	return target, true
+	target, ok := landingPages[u.Path]
+	return target, ok
 }

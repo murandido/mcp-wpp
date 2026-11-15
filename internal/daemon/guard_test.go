@@ -238,7 +238,7 @@ func TestLandingPath(t *testing.T) {
 			t.Errorf("landingPath(%q) accepted as %q", bad, got)
 		}
 	}
-	for in, want := range map[string]string{"/pair": "/pair", "/access?q=ana": "/access?q=ana", "/outbox": "/outbox"} {
+	for in, want := range map[string]string{"/pair": "/pair", "/access?q=ana": "/access", "/outbox": "/outbox"} {
 		if got, ok := landingPath(in); !ok || got != want {
 			t.Errorf("landingPath(%q) = %q, %v; want %q", in, got, ok, want)
 		}
