@@ -20,6 +20,7 @@ func (c *Client) ConnectionStatus() ConnectionStatus {
 }
 
 func (c *Client) trackConnectionEvent(event any) {
+	c.stats.observe(event)
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 	state := ""

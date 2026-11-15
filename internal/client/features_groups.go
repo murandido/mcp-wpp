@@ -497,6 +497,7 @@ func (c *Client) inviteParticipant(ctx context.Context, out *ParticipantOutcome,
 		out.Error = fmt.Sprintf("send group invite: %v", err)
 		return
 	}
+	c.countSent()
 	summary := "Group invite: " + groupName
 	if caption != "" {
 		summary += " — " + caption

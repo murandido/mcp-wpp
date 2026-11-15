@@ -6,12 +6,14 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 
 ```text
 cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
+internal/alert/      session alerts: state machine (down/logged out/up) and webhook notifier with retries
 internal/backup/     encrypted backup archives, verify, restore, key rotation (crash-safe, see rekey.go)
 internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features, read state and mentions
 internal/auth/       caller identity on the request context, client token format and hashing
 internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
 internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
 internal/mcp/        mcp-go server: tool registrations, audit, scope and access middlewares, send policy and confirmation (outbox), scheduler, profiles, catalog
+internal/metrics/    Prometheus text exposition for GET /admin/metrics
 internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, audit log
 internal/webhook/    signed outgoing webhooks for live incoming messages: filters, bounded queue, coalescing, retries
 internal/transcribe/ OpenAI-compatible speech-to-text client
@@ -38,6 +40,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 10. **Everything is audited, nothing is quoted.** `auditMiddleware` (outermost) records every tool call and the resource middleware every read: actor, tool, the chat from `toolAccessScope`, outcome (`ok`, `error`, `denied`, `proposed`, set with `markAudit`) and duration. `daemon.auditAdmin` records state-changing operator requests with a whitelist of fields. Never add message text, other arguments, results or secrets to an audit entry.
 11. **Scheduled messages are writes too.** `schedule_message` follows the send policy when it is created; the scheduler (`RunScheduler`, `-write` only) re-checks access and the send policy at send time, sends through the rate-limited send path, and claims each item atomically (`ClaimScheduled`) so nothing is sent twice. Operator schedules (`wpp-mcp schedule`) need no approval but still require a visible chat.
 12. **Webhooks only report allowed chats.** `internal/webhook` re-checks `ChatAllowed` when each batch is sent, never sends history sync or the account's own messages, leaves text out unless `-webhook-include-text`, never sends media bytes, and never logs the URL or secret (only the host).
+13. **Operational output carries no personal data.** Metric labels take values from fixed sets (tool names, outcomes, states); alert payloads hold an event kind, a time and a fixed message. Backup archives exclude the key file and the token.
 
 ## Build and test
 

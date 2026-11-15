@@ -3,9 +3,12 @@
 package e2e
 
 import (
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -25,11 +28,34 @@ func TestOperations_BackupRestoreRekey(t *testing.T) {
 	src := t.TempDir()
 	key := keygen(t, bin)
 
-	// Back up the store of a running daemon.
+	// Back up the store of a running daemon, and read its metrics.
 	d, err := startServe(t, bin, src, []string{"-key-file", key})
 	if err != nil {
 		t.Fatal(err)
 	}
+	addr := regexp.MustCompile(`listening on (?:http://)?([^\s/]+)`).FindStringSubmatch(d.out.String())
+	if addr == nil {
+		t.Fatalf("no listen address in: %s", d.out.String())
+	}
+	token, err := os.ReadFile(filepath.Join(src, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://"+addr[1]+"/admin/metrics", nil)
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("metrics without a token must be refused: %v %v", resp, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "wpp_mcp_uptime_seconds") || !strings.Contains(string(body), "wpp_mcp_whatsapp_paired 0") {
+		t.Fatalf("metrics: %d %s", resp.StatusCode, body)
+	}
+
 	archive := filepath.Join(t.TempDir(), "store.tar")
 	if out, err := wpp(t, bin, src, key, "backup", "-out", archive); err != nil {
 		t.Fatalf("backup of a running daemon: %v %s", err, out)

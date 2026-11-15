@@ -30,8 +30,12 @@ var sqliteHeader = []byte("SQLite format 3\x00")
 // inside sqlite3_open_v2, before mattn/go-sqlite3 runs its per-connection
 // PRAGMAs (synchronous, locking_mode, journal_mode, ...). A `PRAGMA key`
 // issued after those comes too late to open an existing encrypted file.
-// The raw 32-byte key skips SQLCipher's own KDF, which is right because it
-// is already a uniformly random HKDF output.
+// SQLCipher treats the decoded hexkey bytes as a passphrase, so it still
+// runs its PBKDF2 key derivation on every open (about 0.1-0.3 s per new
+// connection). That is redundant, since the input is already a uniformly
+// random 32-byte HKDF output, but harmless. Switching to SQLCipher's raw-key
+// form would derive a different database key, so it would need
+// `wpp-mcp rekey`-style migration of existing stores.
 type connector struct {
 	dsn string
 	key []byte

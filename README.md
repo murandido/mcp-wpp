@@ -310,6 +310,56 @@ docker compose up -d
 
 `rekey` writes complete new-key copies of everything first, and only then swaps them in, keeping the old files until the end. If it is interrupted, every file is still readable with the old key or the new one. `serve` refuses to start until you rerun the same `rekey` command, which finishes the job. Before the swap starts, `rekey -abort` drops the copies instead. Keep the old key: backups made before the rotation still need it.
 
+### Metrics
+
+`GET /admin/metrics` serves Prometheus text metrics. Like every `/admin/` route it needs the bearer token. No label holds a JID, name or number.
+
+| Metric | Meaning |
+|---|---|
+| `wpp_mcp_build_info{version}` | Running version |
+| `wpp_mcp_uptime_seconds`, `wpp_mcp_start_time_seconds` | Process uptime |
+| `wpp_mcp_whatsapp_paired`, `_connected`, `_authenticated` | Device linked, websocket up, session accepted by WhatsApp (0/1) |
+| `wpp_mcp_whatsapp_connection_state{state}` | Last connection event, one-hot |
+| `wpp_mcp_messages_received_total`, `wpp_mcp_messages_sent_total` | Live messages in and out since start |
+| `wpp_mcp_seconds_since_last_message_received` | Present once a message has arrived since start |
+| `wpp_mcp_tool_calls_total{tool,outcome}` | MCP tool executions, `ok` or `error` (calls refused by the access policy or held as proposals are not executions) |
+| `wpp_mcp_outbox_pending`, `wpp_mcp_access_requests_pending` | Waiting for your decision |
+| `wpp_mcp_chats_cached`, `wpp_mcp_chats_visible` | Chats in the cache, and those the access policy shows |
+| `wpp_mcp_alerts_total{event,result}` | Session alert deliveries (with `-alert-url`) |
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: wpp-mcp
+    metrics_path: /admin/metrics
+    authorization:
+      credentials_file: /etc/prometheus/wpp-mcp-token   # a copy of <store>/token
+    static_configs:
+      - targets: ["127.0.0.1:8765"]
+```
+
+A scraper on another Docker network reaches the daemon under another hostname: add it with `-allowed-host`.
+
+### Session alerts
+
+With `-alert-url`, `serve` POSTs a short alert when a paired session has not been authenticated for longer than `-alert-after` (default 5m), when WhatsApp logs the device out, and when the session recovers after one of those. Brief reconnects stay silent. Delivery runs in the background and is retried with backoff (network errors, 429 and 5xx) for about a minute. Alerts never contain chat data, names or numbers.
+
+The default body is JSON:
+
+```json
+{"event":"session_down","since":"2026-11-15T09:12:00Z","message":"WhatsApp session has not been authenticated for 5m0s"}
+```
+
+`event` is `session_down`, `logged_out` or `session_up`, and `since` is when the outage began. For [ntfy.sh](https://ntfy.sh), use the plain-text format. The body is then the message, and `Title`, `Tags` and `Priority` headers make it a readable notification:
+
+```bash
+wpp-mcp serve -alert-url https://ntfy.sh/<your-secret-topic> -alert-format text
+# a protected topic or a self-hosted server:
+WPP_MCP_ALERT_HEADER="Authorization: Bearer tk_..." wpp-mcp serve -alert-url https://ntfy.example.com/wpp -alert-format text
+```
+
+Treat the alert URL and header as secrets; they are never logged. The Docker health check (`wpp-mcp healthcheck`, which probes `/readyz`) needs no change.
+
 ## Configuration
 
 Global flags go before the command: `wpp-mcp -store DIR serve -write`.
@@ -339,6 +389,10 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -webhook-include-text` | `WPP_MCP_WEBHOOK_INCLUDE_TEXT` | off | Include message text and captions: they leave the machine |
 | `serve -webhook-chats` | `WPP_MCP_WEBHOOK_CHATS` | all allowed | Comma-separated chat JIDs or phone numbers |
 | `serve -webhook-keywords` | `WPP_MCP_WEBHOOK_KEYWORDS` | | Comma-separated words; only matching messages |
+| `serve -alert-url` | `WPP_MCP_ALERT_URL` | | POST session alerts here (see [Session alerts](#session-alerts)) |
+| `serve -alert-after` | `WPP_MCP_ALERT_AFTER` | `5m` | How long a paired session may stay unauthenticated before alerting |
+| `serve -alert-format` | `WPP_MCP_ALERT_FORMAT` | `json` | `json`, or `text` for ntfy.sh |
+| `serve -alert-header` | `WPP_MCP_ALERT_HEADER` | | Extra `Name: value` header on alert requests, e.g. auth |
 | | `WPP_MCP_PAIR_PHONE` | | Print a pairing code at startup when unpaired |
 | | `WPP_MCP_MEDIA_ROOT` | `<store>/uploads` | Only directory `send_file` may read from and `output_path` may write to |
 | | `WPP_MCP_TRANSCRIBE_URL` | | OpenAI-compatible speech-to-text endpoint |
