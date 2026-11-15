@@ -44,6 +44,7 @@ var expectedToolNames = []string{
 	"request_chat_access",
 	"request_sync",
 	"resync_labels",
+	"schedule_message",
 	"search_contacts",
 	"send_audio_message",
 	"send_contact_card",
@@ -129,7 +130,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 49
+	const want = 50
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -142,7 +143,7 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 45 {
+	if got := len(s.MCP().ListTools()); got != 46 {
 		t.Fatalf("default tool count = %d, want 45", got)
 	}
 }

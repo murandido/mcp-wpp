@@ -3,7 +3,7 @@
 
 - **Default**: exposed without `-tools`. Opt-in groups are enabled with `-tools default,groups` (or `all`).
 - **Read-only**: available without `-write`.
-- **Approval**: with `-write`, the call becomes a proposal you approve with `wpp-mcp outbox` (unless `-confirm-sends=false`).
+- **Approval**: with `-write`, the call follows the target chat's send policy (`wpp-mcp access send`): `confirm` (the default unless `-confirm-sends=false`) makes it a proposal you approve with `wpp-mcp outbox`, `direct` acts at once, `none` refuses it. Tools without a chat use the default.
 - **Chat access**: which chats the tool can reach under the access policy.
 
 ## core
@@ -36,6 +36,7 @@
 | `edit_message` | yes |  | yes | chat in `chat_jid` | Edit a previously-sent text message in place; recipients see the new body with an `edited` label and the cached row takes the new body. |
 | `mark_chat_read` | yes |  |  | chat in `chat_jid` | Ack the most recent incoming messages in a chat to clear its unread badge; senders receive read receipts (subject to their privacy settings). |
 | `mark_read` | yes |  |  | chat in `chat_jid` | Mark specific incoming messages as read; senders receive read receipts (subject to their privacy settings) and the chat's unread badge decrements. |
+| `schedule_message` | yes |  | yes | chat in `recipient` | Schedule a WhatsApp text message for the daemon to send at a future time (at most 30 days ahead); nothing is sent now. |
 | `send_audio_message` | yes |  | yes | chat in `recipient` | Send an audio file as a WhatsApp voice note (waveform UI, push-to-play); non-ogg inputs are transcoded via ffmpeg before upload. |
 | `send_file` | yes |  | yes | chat in `recipient` | Upload and send a picture, video, document, or raw audio attachment via WhatsApp; the recipient sees a media message and the outgoing row is persisted to the local cache. |
 | `send_message` | yes |  | yes | chat in `recipient` | Send a new WhatsApp text message to a person or group; recipients see it as a fresh message from the paired account and the row is also stored in the local cache. |

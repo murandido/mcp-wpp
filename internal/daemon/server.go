@@ -174,7 +174,11 @@ func (s *Server) Run(ctx context.Context) error {
 	ui := newUIAuth()
 	ui.mount(mux)
 	if s.cfg.Access != nil {
-		newAccessHandlers(s.cfg.Access).mount(mux)
+		ah := newAccessHandlers(s.cfg.Access)
+		if d, ok := s.cfg.Outbox.(interface{ DefaultSendPolicy() string }); ok {
+			ah.defaultSend = d.DefaultSendPolicy
+		}
+		ah.mount(mux)
 	}
 	if s.cfg.Outbox != nil {
 		(&outboxHandlers{ob: s.cfg.Outbox}).mount(mux)

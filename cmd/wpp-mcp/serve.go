@@ -77,7 +77,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
 	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
-	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, record sends and account changes as proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately (env WPP_MCP_CONFIRM_SENDS)")
+	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, the default send policy for chats without one: proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately. Per chat: wpp-mcp access send (env WPP_MCP_CONFIRM_SENDS)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
 	auditDays, auditErr := registerAuditDays(fs)
 	if auditErr != nil {
@@ -214,19 +214,25 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 	switch {
 	case write && confirmSends:
-		fmt.Fprintln(os.Stderr, "write mode: sends and account changes wait for approval (wpp-mcp outbox)")
+		fmt.Fprintln(os.Stderr, "write mode: sends and account changes wait for approval (wpp-mcp outbox), unless a chat's send policy says otherwise (wpp-mcp access send)")
 	case write:
-		fmt.Fprintln(os.Stderr, "write mode WITHOUT confirmation: tools send messages and change the account immediately")
+		fmt.Fprintln(os.Stderr, "write mode WITHOUT confirmation: tools send messages and change the account immediately, except in chats whose send policy is confirm or none (wpp-mcp access send)")
 	default:
-		fmt.Fprintln(os.Stderr, "read-only mode (default): pass -write to enable sending")
+		fmt.Fprintln(os.Stderr, "read-only mode (default): pass -write to enable sending and scheduled messages")
 	}
 	fmt.Fprintf(os.Stderr, "tools (%d): %s\n", len(mcpServer.ToolNames()), strings.Join(mcpServer.ToolNames(), ", "))
 	if labelsEnabled {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
 	d.SetMCPMount(mcpServer.AttachHTTP)
-	if write && confirmSends {
+	if write {
+		// Per-chat send policies can ask for confirmation even when the
+		// default is direct, and scheduled messages are listed and
+		// cancelled there, so the outbox is served in every write mode.
 		d.SetOutbox(mcpServer)
+		// Scheduled messages are sent only in write mode; read-only
+		// daemons leave them queued.
+		go mcpServer.RunScheduler(ctx, mcpsrv.SchedulerInterval)
 	}
 	if retainDays > 0 {
 		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)

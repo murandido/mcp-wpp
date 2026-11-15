@@ -5,6 +5,7 @@ package mcp
 import (
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 
@@ -30,6 +31,10 @@ type Server struct {
 	labelsEnabled bool
 	confirmSends  bool
 	auditor       Auditor
+	// now is the scheduling clock; nil means time.Now (see SetClock).
+	now func() time.Time
+	// schedWake nudges the scheduler when a message is scheduled.
+	schedWake chan struct{}
 }
 
 // NewServer constructs an MCP server with all tools registered against the
@@ -82,9 +87,9 @@ func NewServerWithOptions(c *client.Client, cache pairingCache, opts Options) (*
 	if opts.ReadOnly {
 		instructions += " This server is in read-only mode: tools cannot send messages or mutate the WhatsApp account. Downloads and history requests can still retrieve data and write the local cache. An explicit media download may ask your own phone to re-upload an expired attachment; it never notifies the sender or chat. Pairing remains an operator action."
 	}
-	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled, confirmSends: opts.ConfirmSends && !opts.ReadOnly, auditor: opts.Audit}
-	if s.confirmSends {
-		instructions += " Sending and other account changes need the user's approval: such tools return a proposal_id and send nothing until the user approves it."
+	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled, confirmSends: opts.ConfirmSends && !opts.ReadOnly, auditor: opts.Audit, schedWake: make(chan struct{}, 1)}
+	if !s.readOnly {
+		instructions += " Depending on the chat, sending and other account changes may need the user's approval: such tools then return a proposal_id and send nothing until the user approves it. The user can also turn sending off for a chat; respect that refusal."
 	}
 	s.mcp = server.NewMCPServer(
 		"whatsapp",

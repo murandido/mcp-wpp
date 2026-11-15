@@ -31,6 +31,13 @@ type harness struct {
 
 func newHarness(t *testing.T, serveArgs ...string) *harness {
 	t.Helper()
+	return newSeededHarness(t, nil, serveArgs...)
+}
+
+// newSeededHarness is newHarness with a hook that runs on the encrypted
+// store directory before the daemon starts (WPP_MCP_KEY_FILE is set).
+func newSeededHarness(t *testing.T, seed func(storeDir string), serveArgs ...string) *harness {
+	t.Helper()
 	repo := repoRoot(t)
 	bin := filepath.Join(repo, "bin", "wpp-mcp")
 	storeDir := t.TempDir()
@@ -53,6 +60,9 @@ func newHarness(t *testing.T, serveArgs ...string) *harness {
 		t.Fatalf("keygen: %v: %s", err, out)
 	}
 	t.Setenv("WPP_MCP_KEY_FILE", keyFile)
+	if seed != nil {
+		seed(storeDir)
+	}
 
 	args := append([]string{"-store", storeDir, "serve", "-addr", addr}, serveArgs...)
 	cmd := exec.Command(bin, args...)

@@ -7,16 +7,22 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/murandido/mcp-wpp/internal/store"
 )
 
-// Outbox is the proposal queue the operator approves. *mcp.Server
-// implements it: approving runs the proposed tool.
+// Outbox is the proposal queue the operator approves, and the queue of
+// scheduled messages. *mcp.Server implements it: approving runs the
+// proposed tool (or, for a scheduled message, queues it).
 type Outbox interface {
 	ListProposals(ctx context.Context, status string) ([]store.Proposal, error)
 	ApproveProposal(ctx context.Context, id int64) (store.Proposal, error)
 	RejectProposal(ctx context.Context, id int64) error
+	// CancelProposal withdraws a pending proposal or a scheduled message.
+	CancelProposal(ctx context.Context, id int64) error
+	// ScheduleMessage schedules a text message on the operator's behalf.
+	ScheduleMessage(ctx context.Context, chat, message string, sendAt time.Time) (store.Proposal, error)
 }
 
 var outboxTmpl = template.Must(template.ParseFS(accessTemplateFS, "templates/outbox.html.tmpl"))
@@ -36,6 +42,27 @@ func (h *outboxHandlers) mount(mux *http.ServeMux) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"proposals": ps})
 	})
+	mux.HandleFunc("POST /admin/outbox/schedule", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Chat    string `json:"chat"`
+			Message string `json:"message"`
+			SendAt  string `json:"send_at"` // RFC 3339
+		}
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		sendAt, err := time.Parse(time.RFC3339, body.SendAt)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "send_at must be RFC 3339 with a UTC offset"})
+			return
+		}
+		p, err := h.ob.ScheduleMessage(r.Context(), body.Chat, body.Message, sendAt)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, p)
+	})
 	mux.HandleFunc("POST /admin/outbox/{id}/{decision}", func(w http.ResponseWriter, r *http.Request) {
 		p, err := h.decide(r)
 		if err != nil {
@@ -45,7 +72,11 @@ func (h *outboxHandlers) mount(mux *http.ServeMux) {
 		writeJSON(w, http.StatusOK, p)
 	})
 	mux.HandleFunc("GET /outbox", func(w http.ResponseWriter, r *http.Request) {
-		pending, err := h.ob.ListProposals(r.Context(), "pending")
+		pending, err := h.ob.ListProposals(r.Context(), store.OutboxPending)
+		var scheduled []store.Proposal
+		if err == nil {
+			scheduled, err = h.ob.ListProposals(r.Context(), store.OutboxScheduled)
+		}
 		if err == nil {
 			var recent []store.Proposal
 			if recent, err = h.ob.ListProposals(r.Context(), ""); err == nil {
@@ -55,7 +86,7 @@ func (h *outboxHandlers) mount(mux *http.ServeMux) {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.Header().Set("Cache-Control", "no-store")
 				_ = outboxTmpl.Execute(w, map[string]any{
-					"CSRFToken": h.mint(), "Pending": pending, "Recent": recent, "Error": r.URL.Query().Get("error"),
+					"CSRFToken": h.mint(), "Pending": pending, "Scheduled": scheduled, "Recent": recent, "Error": r.URL.Query().Get("error"),
 				})
 				return
 			}
@@ -85,8 +116,10 @@ func (h *outboxHandlers) decide(r *http.Request) (any, error) {
 		return h.ob.ApproveProposal(r.Context(), id)
 	case "reject":
 		return map[string]any{"id": id, "status": "rejected"}, h.ob.RejectProposal(r.Context(), id)
+	case "cancel":
+		return map[string]any{"id": id, "status": "cancelled"}, h.ob.CancelProposal(r.Context(), id)
 	}
-	return nil, errors.New("decision must be approve or reject")
+	return nil, errors.New("decision must be approve, reject or cancel")
 }
 
 func (h *outboxHandlers) mint() string {

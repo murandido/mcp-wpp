@@ -19,6 +19,7 @@ type AccessStore interface {
 	AccessMode(ctx context.Context) (string, error)
 	SetAccessMode(ctx context.Context, mode string) error
 	SetChatAccess(ctx context.Context, jid, state, note string) error
+	SetChatSendPolicy(ctx context.Context, jid, policy string) error
 	ListAccess(ctx context.Context, query string, limit int) ([]store.AccessEntry, error)
 	ListAccessRequests(ctx context.Context, status string) ([]store.AccessRequest, error)
 	DecideAccessRequest(ctx context.Context, id int64, approve bool, jids []string) error
@@ -47,6 +48,9 @@ var accessTmpl = template.Must(template.New("access.html.tmpl").Funcs(template.F
 // page (session cookie plus CSRF token).
 type accessHandlers struct {
 	st AccessStore
+	// defaultSend reports the daemon's default send policy for chats
+	// without one (nil when no write-mode MCP server is attached).
+	defaultSend func() string
 
 	csrfMu sync.Mutex
 	csrf   map[string]bool
@@ -60,6 +64,7 @@ func (h *accessHandlers) mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/access", h.apiList)
 	mux.HandleFunc("POST /admin/access/mode", h.apiMode)
 	mux.HandleFunc("POST /admin/access/chat", h.apiChat)
+	mux.HandleFunc("POST /admin/access/send", h.apiSend)
 	mux.HandleFunc("GET /admin/access/requests", h.apiRequests)
 	mux.HandleFunc("POST /admin/access/requests/{id}", h.apiDecide)
 
@@ -69,6 +74,9 @@ func (h *accessHandlers) mount(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("POST /access/chat", h.form(func(r *http.Request) error {
 		return h.st.SetChatAccess(r.Context(), r.FormValue("jid"), formState(r.FormValue("state")), "set on /access")
+	}))
+	mux.HandleFunc("POST /access/send", h.form(func(r *http.Request) error {
+		return h.st.SetChatSendPolicy(r.Context(), r.FormValue("jid"), r.FormValue("send"))
 	}))
 	mux.HandleFunc("POST /access/requests/{id}", h.form(func(r *http.Request) error {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -101,7 +109,14 @@ func (h *accessHandlers) apiList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "chats": chats})
+	writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "chats": chats, "default_send": h.defaultSendPolicy()})
+}
+
+func (h *accessHandlers) defaultSendPolicy() string {
+	if h.defaultSend == nil {
+		return ""
+	}
+	return h.defaultSend()
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -142,6 +157,22 @@ func (h *accessHandlers) apiChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"jid": body.JID, "state": body.State})
 }
 
+// apiSend sets a chat's send policy: none, confirm, direct, or reset.
+func (h *accessHandlers) apiSend(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		JID  string `json:"jid"`
+		Send string `json:"send"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := h.st.SetChatSendPolicy(r.Context(), body.JID, body.Send); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"jid": body.JID, "send": body.Send})
+}
+
 func (h *accessHandlers) apiRequests(w http.ResponseWriter, r *http.Request) {
 	reqs, err := h.st.ListAccessRequests(r.Context(), r.URL.Query().Get("status"))
 	if err != nil {
@@ -174,12 +205,13 @@ func (h *accessHandlers) apiDecide(w http.ResponseWriter, r *http.Request) {
 // --- HTML page ---------------------------------------------------------------
 
 type accessPageData struct {
-	CSRFToken string
-	Mode      string
-	Query     string
-	Chats     []store.AccessEntry
-	Requests  []store.AccessRequest
-	Error     string
+	CSRFToken   string
+	Mode        string
+	DefaultSend string
+	Query       string
+	Chats       []store.AccessEntry
+	Requests    []store.AccessRequest
+	Error       string
 }
 
 func (h *accessHandlers) mintCSRF() string {
@@ -205,7 +237,7 @@ func (h *accessHandlers) useCSRF(t string) bool {
 
 func (h *accessHandlers) page(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := accessPageData{CSRFToken: h.mintCSRF(), Query: r.URL.Query().Get("q"), Error: r.URL.Query().Get("error")}
+	data := accessPageData{CSRFToken: h.mintCSRF(), Query: r.URL.Query().Get("q"), Error: r.URL.Query().Get("error"), DefaultSend: h.defaultSendPolicy()}
 	var err error
 	if data.Mode, err = h.st.AccessMode(ctx); err == nil {
 		if data.Chats, err = h.st.ListAccess(ctx, data.Query, 300); err == nil {

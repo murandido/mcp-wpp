@@ -160,9 +160,9 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply access schema: %w", err)
 	}
-	if _, err := db.Exec(outboxSchema); err != nil {
+	if err := applySendingSchema(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("apply outbox schema: %w", err)
+		return nil, err
 	}
 	if _, err := db.Exec(tokensSchema + auditSchema); err != nil {
 		db.Close()

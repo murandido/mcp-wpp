@@ -19,6 +19,9 @@ func openAccessStore(t *testing.T) *Store {
 	if _, err := s.db.Exec(accessSchema); err != nil {
 		t.Fatalf("access schema: %v", err)
 	}
+	if _, err := s.db.Exec(sendPolicySchema); err != nil {
+		t.Fatalf("send policy schema: %v", err)
+	}
 	return s
 }
 

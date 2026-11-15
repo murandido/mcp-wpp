@@ -45,6 +45,7 @@ var toolGroup = map[string]string{
 	"delete_message":     groupMessaging,
 	"mark_read":          groupMessaging,
 	"mark_chat_read":     groupMessaging,
+	"schedule_message":   groupMessaging,
 
 	"transcribe_audio": groupTranscribe,
 

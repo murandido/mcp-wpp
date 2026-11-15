@@ -147,7 +147,40 @@ wpp-mcp outbox approve 7       # sends now; the chat must still be allowed
 wpp-mcp outbox reject 7
 ```
 
-Proposals expire after 15 minutes. Read receipts, typing and presence skip the queue. `-confirm-sends=false` restores immediate sends if you really want them.
+Proposals expire after 15 minutes. Read receipts, typing and presence skip the queue.
+
+### Send policy per chat
+
+Each chat has a send policy, separate from whether the AI can see it:
+
+- **`none`**: the AI's write tools are refused for this chat, even with `-write`. This includes read receipts and typing.
+- **`confirm`**: writes become proposals in the outbox (the behaviour above).
+- **`direct`**: writes act immediately, without a proposal.
+
+```bash
+wpp-mcp access send "Ana" direct       # by name (must be unique) or JID
+wpp-mcp access send 123456789@g.us none
+wpp-mcp access send "Ana" reset        # back to the daemon's default
+```
+
+`wpp-mcp access list` shows the policy in its `SEND` column, and the `/access` page has a control per chat. Chats without a policy use the daemon's default: `confirm`, or `direct` with `-confirm-sends=false`. Tools that target no chat (privacy settings, `create_group`, status message) always use the default. A send policy never makes a hidden chat visible: a write to a hidden chat still answers "chat not found". Without `-write` no write tool is exposed, whatever the policies say.
+
+### Scheduled messages
+
+With `-write`, the daemon can send a text message later by itself, so no external routine or temporary send window is needed:
+
+```bash
+wpp-mcp schedule "Ana" "2026-11-16 06:00" Good morning!        # local time (-tz, $TZ, or the system zone)
+wpp-mcp schedule -tz America/Sao_Paulo "Ana" 2026-11-16 06:00 Good morning!
+wpp-mcp schedule 123456789@g.us 2026-11-16T06:00:00-03:00 Good morning!
+wpp-mcp outbox                 # pending proposals and scheduled messages, with local and UTC times
+wpp-mcp outbox cancel 12       # withdraw a scheduled message (or a pending proposal)
+wpp-mcp outbox history         # outcomes: sent (with the message ID), failed, missed, cancelled
+```
+
+The AI can do the same with the `schedule_message` tool, under the chat's send policy: `none` refuses it, `confirm` makes a proposal that you can approve until the send time and that is then scheduled, and `direct` schedules it at once. Your own `wpp-mcp schedule` needs no approval, but the chat must exist, be visible to the AI and not have send policy `none`.
+
+Send times must be in the future and at most 30 days ahead. At the send time the daemon checks access and the send policy again (a chat hidden meanwhile is not sent to), then sends through the usual rate limiter. Each message is claimed once, so it is never sent twice. Scheduled messages are kept in the encrypted database and survive restarts; one that came due while the daemon was down is still sent if it is at most one hour late, and marked `missed` otherwise. If the account is paired but momentarily disconnected, the daemon waits for the connection within that hour. A daemon started without `-write` neither exposes `schedule_message` nor sends scheduled messages; they stay queued until a `-write` daemon runs.
 
 ## Encryption at rest
 
@@ -168,12 +201,13 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `-key-file` | `WPP_MCP_KEY_FILE` | see above | Encryption key |
 | `-no-encryption` | `WPP_MCP_NO_ENCRYPTION` | off | Keep the store unencrypted |
 | `-debug` | `WPP_MCP_DEBUG=1` | off | Show JIDs and bodies in logs (redacted by default) |
+| `schedule -tz` | `TZ` | system zone | Time zone for `wpp-mcp schedule` times without an offset |
 | `serve -addr` | `WPP_MCP_ADDR` | `127.0.0.1:8765` | `host:port` or `unix:/path.sock` (0600) |
 | `serve -allow-remote` | | off | Allow a non-loopback bind (put TLS in front) |
 | `serve -allowed-host` | `WPP_MCP_ALLOWED_HOSTS` | | Extra Host/Origin values, e.g. a reverse-proxy name |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
-| `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, sends wait for approval |
+| `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, the default send policy for chats without one: `confirm` (on) or `direct` (off); see `wpp-mcp access send` |
 | `serve -tools` | `WPP_MCP_TOOLS` | `default` | Groups or tool names: `core`, `access`, `messaging`, `transcribe`, `labels`, `contacts`, `groups`, `privacy`, `polls`, `all` |
 | `serve -disable-tools` | `WPP_MCP_DISABLE_TOOLS` | | Groups or tool names to hide |
 | `serve -max-sends-per-hour` | `WPP_MCP_MAX_SENDS_PER_HOUR` | 30 | Outbound cap |
