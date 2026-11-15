@@ -31,6 +31,8 @@ Commands:
   serve        Run the daemon: keeps the WhatsApp session and cache, serves MCP at /mcp
   pair         Link WhatsApp: -phone +<number> for a pairing code, or a QR in the terminal
   access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
+  token        API tokens for MCP clients: scoped, chat-limited, revocable (create, list, revoke)
+  audit        Show the audit log of tool calls and operator actions
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
   outbox       Approve or reject what the AI proposed to send (with serve -write)
   open-ui      Print a single-use browser login link (-page /pair, /access or /outbox)
@@ -59,11 +61,14 @@ serve flags:
   -disable-tools LIST    Tool groups or names to hide
   -max-sends-per-hour N  Outbound send cap (default 30)
   -retain-days N         Delete cached messages and media older than N days (default 0: keep)
+  -audit-days N          Keep the audit log N days (default 90, env WPP_MCP_AUDIT_DAYS; 0 disables it)
   -enable-labels         Enable WhatsApp Business label sync and tools
   -full-history          Ask the phone for a full history sync on a new pairing
 
-Every HTTP route except /healthz and /readyz requires the bearer token that
-serve stores in <store>/token (or WPP_MCP_TOKEN).
+Every HTTP route except /healthz and /readyz requires the operator bearer
+token that serve stores in <store>/token (or WPP_MCP_TOKEN). /mcp also
+accepts client tokens from ` + "`wpp-mcp token create`" + `, which is what remote
+connectors should use.
 `
 
 func main() {
@@ -131,6 +136,10 @@ func main() {
 		code = runOutbox(storeDir, rest)
 	case "access":
 		code = runAccess(storeDir, rest)
+	case "token":
+		code = runToken(storeDir, rest)
+	case "audit":
+		code = runAudit(storeDir, rest)
 	case "tools":
 		code = runTools(rest)
 	case "keygen":

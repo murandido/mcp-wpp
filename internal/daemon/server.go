@@ -41,9 +41,10 @@ type pairDriver interface {
 // Addr may also be "unix:/path/to.sock" to listen on a Unix socket, which is
 // created with mode 0600.
 //
-// AuthToken is required. /mcp and /admin/* accept only
-// `Authorization: Bearer <token>`; browser pages accept the bearer token or
-// a session cookie minted through /admin/ui-login → /ui/login. Only /healthz,
+// AuthToken is the operator token and is required. /admin/* accepts only
+// `Authorization: Bearer <operator token>`; /mcp accepts it or a client API
+// token from Tokens; browser pages accept the operator bearer token or a
+// session cookie minted through /admin/ui-login → /ui/login. Only /healthz,
 // /readyz and /ui/login are public.
 //
 // AllowedHosts extends the Host/Origin allowlist beyond loopback names, for
@@ -65,6 +66,12 @@ type Config struct {
 	// Outbox, when set, serves send proposals for approval: /admin/outbox/*
 	// and the /outbox page.
 	Outbox Outbox
+	// Tokens, when set, accepts client API tokens on /mcp and serves
+	// /admin/tokens.
+	Tokens TokenStore
+	// Audit, when set, records state-changing operator requests and serves
+	// /admin/audit.
+	Audit AuditLog
 	// AdminMount, if non-nil, registers extra operator endpoints. They are
 	// served under /admin/* (bearer only) or as browser pages.
 	AdminMount func(mux *http.ServeMux)
@@ -175,8 +182,16 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.cfg.AdminMount != nil {
 		s.cfg.AdminMount(mux)
 	}
+	var verifier TokenVerifier
+	if s.cfg.Tokens != nil {
+		verifier = s.cfg.Tokens
+		mountTokenAdmin(mux, s.cfg.Tokens)
+	}
+	if s.cfg.Audit != nil {
+		mountAuditAdmin(mux, s.cfg.Audit)
+	}
 
-	rootHandler := hostGuard(authGuard(securityHeaders(mux), s.cfg.AuthToken, ui), s.cfg.AllowedHosts)
+	rootHandler := hostGuard(authGuard(securityHeaders(auditAdmin(mux, s.cfg.Audit)), s.cfg.AuthToken, ui, verifier), s.cfg.AllowedHosts)
 
 	ln, err := listen(s.cfg.Addr)
 	if err != nil {

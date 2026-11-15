@@ -29,6 +29,7 @@ type Server struct {
 	readOnly      bool
 	labelsEnabled bool
 	confirmSends  bool
+	auditor       Auditor
 }
 
 // NewServer constructs an MCP server with all tools registered against the
@@ -51,6 +52,8 @@ type Options struct {
 	// Tools selects tool groups/names. A nil Tools exposes every registered
 	// tool (tests and smoke); the daemon always passes a selection.
 	Tools *ToolSelection
+	// Audit, when set, records every tool call and resource read (audit.go).
+	Audit Auditor
 }
 
 // NewServer registers every tool (no read-only or profile filtering).
@@ -79,7 +82,7 @@ func NewServerWithOptions(c *client.Client, cache pairingCache, opts Options) (*
 	if opts.ReadOnly {
 		instructions += " This server is in read-only mode: tools cannot send messages or mutate the WhatsApp account. Downloads and history requests can still retrieve data and write the local cache. An explicit media download may ask your own phone to re-upload an expired attachment; it never notifies the sender or chat. Pairing remains an operator action."
 	}
-	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled, confirmSends: opts.ConfirmSends && !opts.ReadOnly}
+	s := &Server{client: c, cache: cache, readOnly: opts.ReadOnly, labelsEnabled: opts.LabelsEnabled, confirmSends: opts.ConfirmSends && !opts.ReadOnly, auditor: opts.Audit}
 	if s.confirmSends {
 		instructions += " Sending and other account changes need the user's approval: such tools return a proposal_id and send nothing until the user approves it."
 	}
@@ -88,10 +91,14 @@ func NewServerWithOptions(c *client.Client, cache pairingCache, opts Options) (*
 		Version,
 		server.WithToolCapabilities(true),
 		server.WithInstructions(instructions),
-		// Access is checked first, so a hidden chat is refused before any
-		// proposal is recorded.
+		// The first middleware is outermost. Auditing sees every call,
+		// refused ones included. The token scope and chat access are
+		// checked before any proposal is recorded.
+		server.WithToolHandlerMiddleware(s.auditMiddleware),
+		server.WithToolHandlerMiddleware(s.scopeMiddleware),
 		server.WithToolHandlerMiddleware(s.accessMiddleware),
 		server.WithToolHandlerMiddleware(s.confirmMiddleware),
+		server.WithResourceHandlerMiddleware(s.auditResourceMiddleware),
 	)
 	s.registerTools()
 	for name := range s.mcp.ListTools() {

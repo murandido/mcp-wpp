@@ -71,7 +71,7 @@ func (s *Store) ListMessages(ctx context.Context, params ListMessagesParams) ([]
 		}
 	}
 	if s.scoped {
-		whereClauses = append(whereClauses, accessFilter("messages.chat_jid"))
+		whereClauses = append(whereClauses, accessFilter("messages.chat_jid")+s.tokenFilter("messages.chat_jid"))
 	}
 
 	var b strings.Builder

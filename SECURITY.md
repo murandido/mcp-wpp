@@ -12,6 +12,8 @@ Issues in WhatsApp's protocol handling belong to [whatsmeow](https://github.com/
 
 - **The model is not trusted with everything.** Any chat it can read may contain prompt injection, and anything it reads reaches the model provider. The consent policy decides what it can read; the outbox decides what it can send.
 - **Other local processes and web pages are not trusted.** Every route needs the bearer token (except health probes and the single-use UI login), Host and Origin must be loopback or explicitly allowed, and browser sessions use HttpOnly, SameSite=Strict cookies with CSRF tokens.
+- **Remote MCP clients are trusted only as far as their token says.** A client token works on `/mcp` only, carries scopes (`read`, `send`) and an optional chat set that narrows the access policy, and can expire or be revoked at once. Only its SHA-256 is stored. The operator token is the only credential for `/admin/*` and the operator pages.
+- **Actions leave a trace.** Every tool call, resource read and operator action is recorded in the encrypted audit log (actor, tool, chat, outcome, duration) for `-audit-days` (90 by default). Message text, other arguments and results are never recorded.
 - **The disk is not trusted.** Databases are SQLCipher-encrypted and cached media is AES-256-GCM sealed. The key lives in a separate file, Docker secret or systemd credential.
 - **The operator is trusted.** Anyone who can read the key file and the store, or run commands as your user, can read everything. Protect your account and back up the key.
 

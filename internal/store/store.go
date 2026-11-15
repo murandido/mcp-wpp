@@ -97,6 +97,9 @@ type Store struct {
 	// scoped views (Scoped) restrict MCP-facing reads to chats the access
 	// policy allows; see access.go.
 	scoped bool
+	// tokenChats, when non-nil, narrows a scoped view to a client token's
+	// chats (ScopedTo in tokens.go).
+	tokenChats []string
 	// fts is true when the FTS5 search index is available (fts.go).
 	fts bool
 }
@@ -160,6 +163,10 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 	if _, err := db.Exec(outboxSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply outbox schema: %w", err)
+	}
+	if _, err := db.Exec(tokensSchema + auditSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply tokens and audit schema: %w", err)
 	}
 	fts, err := enableFTS(db)
 	if err != nil {
