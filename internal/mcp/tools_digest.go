@@ -72,6 +72,11 @@ func (s *Server) registerDigestTool() {
 			}
 		}
 		st := s.store(ctx)
+		// Asking for specific chats that all fail to resolve must not widen
+		// the digest to every authorised chat.
+		if len(a.ChatJIDs) > 0 && len(jids) == 0 {
+			return mcp.NewToolResultText(untrustedPreamble + st.FormatDigest(ctx, nil, since)), nil
+		}
 		d, err := st.DigestWith(ctx, store.DigestParams{
 			Since:        since,
 			ChatJIDs:     jids,

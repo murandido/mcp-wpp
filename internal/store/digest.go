@@ -151,7 +151,9 @@ func (s *Store) digestWhere(p DigestParams) (string, []any) {
 		args = append(args, kwArgs...)
 	}
 	if s.scoped {
-		clauses = append(clauses, accessFilter("messages.chat_jid"))
+		// accessFilter alone would ignore a client token's chat set; the
+		// token filter narrows it (it starts with " AND " or is empty).
+		clauses = append(clauses, accessFilter("messages.chat_jid")+s.tokenFilter("messages.chat_jid"))
 	}
 	return strings.Join(clauses, " AND "), args
 }

@@ -175,3 +175,13 @@ func TestAccess_MediaResourceRefusesHiddenChat(t *testing.T) {
 		t.Fatalf("resource read of a hidden chat: %s", out)
 	}
 }
+
+// Specific chats that do not resolve must not widen the digest to every
+// authorised chat.
+func TestDigest_UnresolvedChatJIDsDoNotWiden(t *testing.T) {
+	s, _ := accessServer(t)
+	res := callToolDirect(t, s, "digest", map[string]any{"hours": 1, "chat_jids": []string{"not a jid !!"}})
+	if strings.Contains(res.Text, "hello from Alice") {
+		t.Fatalf("unresolvable chat_jids widened the digest: %s", res.Text)
+	}
+}

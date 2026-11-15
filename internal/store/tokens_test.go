@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,5 +207,36 @@ func TestAudit_RecordListPrune(t *testing.T) {
 	}
 	if es, _ := st.ListAudit(ctx, AuditFilter{}); len(es) != 2 {
 		t.Fatalf("after prune: %d", len(es))
+	}
+}
+
+// The digest query itself must honour a token's chat set, not only the
+// per-chat lookups after it (hidden chats must not even take group slots).
+func TestDigestWith_HonoursTokenChats(t *testing.T) {
+	st := openFileStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for jid, name := range map[string]string{"447700000001@s.whatsapp.net": "Alice", "447700000002@s.whatsapp.net": "Bob"} {
+		if err := st.StoreChat(jid, name, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.StoreMessage(ctx, Message{ID: "m-" + name, ChatJID: jid, Sender: jid, Content: "hello from " + name, Timestamp: now}, nil, nil, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+		_ = st.SetChatAccess(ctx, jid, AccessAllowed, "")
+	}
+	scoped := st.Scoped().ScopedTo([]string{"447700000001@s.whatsapp.net"})
+	for _, groupBy := range []string{"chat", "sender"} {
+		d, err := scoped.DigestWith(ctx, DigestParams{Since: now.Add(-time.Hour), MaxGroups: 1, GroupBy: groupBy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := scoped.FormatDigest(ctx, d, now.Add(-time.Hour))
+		if strings.Contains(text, "Bob") {
+			t.Fatalf("group_by=%s leaked a chat outside the token: %s", groupBy, text)
+		}
+		if !strings.Contains(text, "hello from Alice") {
+			t.Fatalf("group_by=%s with one group slot must still show the token's chat: %s", groupBy, text)
+		}
 	}
 }
