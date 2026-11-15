@@ -14,8 +14,13 @@
 
 services:
   wpp-mcp:
-    image: ghcr.io/murandido/mcp-wpp:latest
-    build: .
+    image: ghcr.io/murandido/mcp-wpp:${WPP_MCP_TAG:-latest}
+    build:
+      context: .
+      # The .git directory is not in the build context, so pass the version:
+      #   WPP_MCP_VERSION=$(git describe --tags --always) docker compose build
+      args:
+        VERSION: ${WPP_MCP_VERSION:-dev}
     restart: unless-stopped
     # Run as your own user so the bind-mounted data and the 0600 key file are
     # readable; set WPP_UID/WPP_GID if yours are not 1000.

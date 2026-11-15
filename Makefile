@@ -1,4 +1,4 @@
-.PHONY: check hooks vuln tidy-check docs-check lint-go docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
+.PHONY: docker-build check hooks vuln tidy-check docs-check lint-go docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
 
 # fmt uses process substitution; force bash so `make lint` works under a POSIX /bin/sh
 SHELL := /bin/bash
@@ -110,6 +110,10 @@ serve: build
 
 smoke: build
 	$(BIN) smoke
+
+# Build the runtime image locally with the git version baked in.
+docker-build:
+	$(CONTAINER) build --target runtime --build-arg VERSION=$(VERSION) -t ghcr.io/murandido/mcp-wpp:latest .
 
 # Run lint, unit, smoke and e2e tests inside Debian with SQLCipher, for hosts
 # without it installed. Uses podman when available, else docker.
