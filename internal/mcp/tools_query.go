@@ -259,7 +259,7 @@ func (s *Server) registerIsOnWhatsApp() {
 
 func (s *Server) registerGetStatus() {
 	tool := mcp.NewTool("get_status",
-		mcp.WithDescription("Report the WhatsApp connection state and its transition time, paired account, and read-only mode. Read-only with no side effects; use when other tools fail with auth or connection errors. Returns `{connected, paired, connection_state, connection_state_since, read_only, own_jid?, own_phone?, hint?}`; `hint` gives the pairing UI when unpaired."),
+		mcp.WithDescription("Report the WhatsApp connection state and its transition time, paired account, and read-only mode. Read-only with no side effects; use when other tools fail with auth or connection errors. Returns `{connected, authenticated, paired, connection_state, connection_state_since, read_only, own_jid?, own_phone?, hint?}`; `authenticated` false while connected means WhatsApp has not accepted the login and no messages arrive; `hint` gives the pairing UI when unpaired."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
@@ -267,8 +267,9 @@ func (s *Server) registerGetStatus() {
 	)
 	s.mcp.AddTool(tool, func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		status := map[string]any{
-			"connected": s.client.IsConnected(),
-			"read_only": s.readOnly,
+			"connected":     s.client.IsConnected(),
+			"authenticated": s.client.IsAuthenticated(),
+			"read_only":     s.readOnly,
 		}
 		connection := s.client.ConnectionStatus()
 		status["connection_state"] = connection.State
@@ -307,7 +308,7 @@ func (s *Server) registerPairingStatus() {
 		ready := false
 		// Short-circuits before touching s.client unless we are paired, so a
 		// nil cache or unpaired state never dereferences the WhatsApp client.
-		if s.cache != nil && s.cache.Paired() && s.client.IsConnected() {
+		if s.cache != nil && s.cache.Paired() && s.client.IsAuthenticated() {
 			if wa := s.client.WA(); wa != nil && wa.Store != nil && wa.Store.ID != nil {
 				ownJID = wa.Store.ID.String()
 				ownPhone = wa.Store.ID.User
