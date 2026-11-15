@@ -11,3 +11,6 @@ cover.out
 /secrets/
 *.key
 /data/
+
+# Claude Code agent worktrees
+/.claude/worktrees/
