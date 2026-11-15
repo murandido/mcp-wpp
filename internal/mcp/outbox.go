@@ -48,6 +48,7 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
+		markAudit(ctx, auditProposed)
 		return resultJSON(map[string]any{
 			"proposal_id": p.ID,
 			"status":      "awaiting_approval",

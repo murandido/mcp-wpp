@@ -51,6 +51,7 @@ func (s *Server) handleMediaResource(ctx context.Context, req mcp.ReadResourceRe
 	}
 	// Resources bypass the tool middleware, so apply the access policy here.
 	if !s.allowedChat(ctx, chatJID) {
+		markAudit(ctx, auditDenied)
 		return nil, fmt.Errorf("chat not found: %s", chatJID)
 	}
 	r := s.client.DownloadWithMediaRetry(ctx, messageID, chatJID, "")

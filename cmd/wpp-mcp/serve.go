@@ -79,7 +79,16 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
 	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, record sends and account changes as proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately (env WPP_MCP_CONFIRM_SENDS)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
+	auditDays, auditErr := registerAuditDays(fs)
+	if auditErr != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", auditErr)
+		return 2
+	}
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *auditDays < 0 {
+		fmt.Fprintln(os.Stderr, "-audit-days must be 0 or more")
 		return 2
 	}
 	if retainDays < 0 {
@@ -173,14 +182,20 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	// The daemon owns the pair cache, so build it first, then hand the cache
 	// to the MCP server (so pairing_status can surface the live QR), then
 	// mount the MCP HTTP handler back onto the daemon.
-	d, err := daemon.New(daemon.Config{
+	dcfg := daemon.Config{
 		Addr:          addr,
 		Driver:        drv,
 		AuthToken:     authToken,
 		AllowedHosts:  mcpsrv.ParseToolList(allowedHosts),
 		AutoPairPhone: os.Getenv("WPP_MCP_PAIR_PHONE"),
 		Access:        st,
-	})
+		Tokens:        st,
+	}
+	var auditor mcpsrv.Auditor
+	if *auditDays > 0 {
+		dcfg.Audit, auditor = st, st
+	}
+	d, err := daemon.New(dcfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon.New: %v\n", err)
 		return 1
@@ -191,6 +206,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		LabelsEnabled: labelsEnabled,
 		Tools:         selection,
 		ConfirmSends:  confirmSends,
+		Audit:         auditor,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tools: %v\n", err)
@@ -216,6 +232,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)
 		go c.RunRetention(ctx, time.Duration(retainDays)*24*time.Hour)
 	}
+	startAuditPruning(ctx, st, *auditDays)
 
 	fmt.Fprintf(os.Stderr, "wpp-mcp listening on %s (MCP at /mcp; bearer token in %s)\n", displayAddr(addr), tokenPath(storeDir))
 	if !c.IsLoggedIn() {

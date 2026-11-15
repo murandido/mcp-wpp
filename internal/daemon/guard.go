@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/murandido/mcp-wpp/internal/auth"
 )
 
 // Request guards, applied to every request in this order:
@@ -20,8 +22,10 @@ import (
 //     can resolve its own domain to 127.0.0.1, but the browser still sends
 //     that domain in Host and Origin.
 //  2. authGuard fails closed. Only the probes and the one-time UI login are
-//     public. /mcp and /admin/* accept the bearer token only; browser pages
-//     accept the bearer token or a session cookie minted by /ui/login.
+//     public. /admin/* accepts the operator bearer token only; /mcp accepts
+//     it or a client API token (wpp-mcp token); browser pages accept the
+//     operator bearer token or a session cookie minted by /ui/login. The
+//     caller's auth.Identity travels on the request context.
 
 const (
 	sessionCookie   = "wpp_mcp_session"
@@ -184,34 +188,69 @@ func (a *uiAuth) validSession(id string) bool {
 	return true
 }
 
-// authGuard enforces the bearer token / session cookie policy.
-func authGuard(next http.Handler, token string, ui *uiAuth) http.Handler {
+// isMCPPath reports whether path is the MCP endpoint, the only place client
+// tokens are accepted.
+func isMCPPath(path string) bool { return path == "/mcp" || strings.HasPrefix(path, "/mcp/") }
+
+// authGuard enforces the bearer token / session cookie policy and attaches
+// the caller's auth.Identity to the request context. The operator token is
+// accepted everywhere; client tokens (tokens may be nil) only on /mcp. Every
+// rejection, whatever the reason, is the same 401.
+func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier) http.Handler {
 	expected := []byte("Bearer " + token)
 	bearerOK := func(r *http.Request) bool {
 		return token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), expected) == 1
+	}
+	clientToken := func(r *http.Request) (auth.Identity, bool) {
+		if tokens == nil {
+			return auth.Identity{}, false
+		}
+		plain, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || !auth.LooksLikeToken(plain) {
+			return auth.Identity{}, false
+		}
+		t, err := tokens.VerifyAPIToken(r.Context(), plain)
+		if err != nil {
+			return auth.Identity{}, false
+		}
+		return t.Identity(), true
 	}
 	deny := func(w http.ResponseWriter) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="wpp-mcp"`)
 		http.Error(w, "unauthorized: run `wpp-mcp open-ui` for a browser login link", http.StatusUnauthorized)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var id auth.Identity
 		switch classify(r.URL.Path) {
 		case classPublic:
+			next.ServeHTTP(w, r)
+			return
 		case classBearer:
-			if !bearerOK(r) {
+			switch {
+			case bearerOK(r):
+				id = auth.Operator("bearer")
+			case isMCPPath(r.URL.Path):
+				var ok bool
+				if id, ok = clientToken(r); !ok {
+					deny(w)
+					return
+				}
+			default:
 				deny(w)
 				return
 			}
 		case classBrowser:
+			id = auth.Operator("bearer")
 			if !bearerOK(r) {
 				c, err := r.Cookie(sessionCookie)
 				if err != nil || !ui.validSession(c.Value) {
 					deny(w)
 					return
 				}
+				id = auth.Operator("session")
 			}
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(auth.WithIdentity(r.Context(), id)))
 	})
 }
 

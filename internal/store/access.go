@@ -99,12 +99,13 @@ func (s *Store) scopeClause(col string) string {
 	if !s.scoped {
 		return ""
 	}
-	return " AND " + accessFilter(col)
+	return " AND " + accessFilter(col) + s.tokenFilter(col)
 }
 
-// ChatAllowed reports whether jid is visible under the access policy.
+// ChatAllowed reports whether jid is visible under the access policy and,
+// on a view narrowed by ScopedTo, the token's chat set.
 func (s *Store) ChatAllowed(ctx context.Context, jid string) (bool, error) {
-	if jid == "" {
+	if jid == "" || !s.tokenAllows(jid) {
 		return false, nil
 	}
 	var ok bool

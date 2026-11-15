@@ -49,7 +49,7 @@ func (s *Server) registerDigestTool() {
 				jids = append(jids, jid)
 			}
 		}
-		st := s.store()
+		st := s.store(ctx)
 		d, err := st.Digest(ctx, since, jids, per, 30)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil

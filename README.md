@@ -19,6 +19,8 @@ Your WhatsApp history is some of the most personal data you have. Connecting it 
 | A malicious message tells the AI to send your data somewhere | **Read-only by default.** With `-write`, every send becomes a **proposal you approve** from the CLI or a web page. Access is checked again when the proposal runs. |
 | Someone copies your disk, backup or container volume | **Encryption at rest**: SQLCipher for both databases and AES-256-GCM for cached media, keyed from a file you keep elsewhere. |
 | Another program or web page talks to the daemon | **Bearer token on every route**, **Host/Origin checks** against DNS rebinding, an optional 0600 Unix socket, and a **stdio bridge** so clients never need a port or a token. |
+| A token stored in a remote connector leaks | **Client tokens** for `/mcp` only: read-only by default, optionally limited to some chats and given an expiry, revocable at once. Only their hash is stored, and they never open the operator API. |
+| You cannot tell what a client read or did | An **audit log** of every tool call, resource read and operator action (who, which tool, which chat, the outcome), without message text or arguments. `wpp-mcp audit` shows it. |
 | A message forges other messages, or a pairing QR leaks to the model | Message bodies cannot start new lines that look like headers, results are labelled as third-party data, and pairing never goes through MCP. |
 | Runaway sends get the number banned | Daemon-side rate limits that clients cannot bypass. |
 
@@ -86,7 +88,19 @@ claude mcp add whatsapp -- docker compose -f /path/to/mcp-wpp/compose.yaml exec 
 }
 ```
 
-**HTTP clients** can use `http://127.0.0.1:8765/mcp` (stateless Streamable HTTP) with `Authorization: Bearer <token>`, where the token is in `<store>/token` (or set `WPP_MCP_TOKEN`).
+**HTTP clients** use `http://127.0.0.1:8765/mcp` (stateless Streamable HTTP, or your reverse proxy's HTTPS URL) with `Authorization: Bearer <token>`. Give each connector **its own client token** rather than the operator token in `<store>/token`:
+
+```bash
+wpp-mcp token create claude-ai                      # read-only, sees what the access policy allows
+wpp-mcp token create phone -chats 5511999999999 -expires 90d
+wpp-mcp token create assistant -scope read,send     # can propose sends (needs serve -write)
+wpp-mcp token list                                  # status and last use; never the secret
+wpp-mcp token revoke claude-ai                      # refused from the next request on
+```
+
+The token (`wppmcp_` and 64 hex characters) is printed once and only its SHA-256 is stored. Client tokens work on `/mcp` only. `-chats` narrows what the token sees to those chats, and only when the access policy allows them as well; other chats look nonexistent to it. A `read` token gets an error from every tool that sends or changes the account. With `send`, writes still go through `-write`, the outbox approval and the access policy. Unknown, revoked and expired tokens all get the same 401. The operator token keeps full access. It is the only one accepted on `/admin/*` and for browser login, and the local CLI and `wpp-mcp stdio` use it.
+
+`wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`.
 
 ## Pairing
 
@@ -157,13 +171,14 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -addr` | `WPP_MCP_ADDR` | `127.0.0.1:8765` | `host:port` or `unix:/path.sock` (0600) |
 | `serve -allow-remote` | | off | Allow a non-loopback bind (put TLS in front) |
 | `serve -allowed-host` | `WPP_MCP_ALLOWED_HOSTS` | | Extra Host/Origin values, e.g. a reverse-proxy name |
-| | `WPP_MCP_TOKEN` | generated | Bearer token (else `<store>/token`) |
+| | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
 | `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, sends wait for approval |
 | `serve -tools` | `WPP_MCP_TOOLS` | `default` | Groups or tool names: `core`, `access`, `messaging`, `transcribe`, `labels`, `contacts`, `groups`, `privacy`, `polls`, `all` |
 | `serve -disable-tools` | `WPP_MCP_DISABLE_TOOLS` | | Groups or tool names to hide |
 | `serve -max-sends-per-hour` | `WPP_MCP_MAX_SENDS_PER_HOUR` | 30 | Outbound cap |
 | `serve -retain-days` | `WPP_MCP_RETAIN_DAYS` | 0 (keep) | Delete messages and media older than N days |
+| `serve -audit-days` | `WPP_MCP_AUDIT_DAYS` | 90 | Keep the audit log N days; 0 disables auditing |
 | `serve -enable-labels` | `WPP_MCP_LABELS` | off | WhatsApp Business label sync and tools |
 | `serve -full-history` | `WPP_MCP_FULL_HISTORY` | off | Ask for a full history sync when pairing |
 | | `WPP_MCP_PAIR_PHONE` | | Print a pairing code at startup when unpaired |
