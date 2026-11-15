@@ -171,6 +171,9 @@ type AccessEntry struct {
 	LastMessageTime time.Time `json:"last_message_time"`
 	State           string    `json:"state"`   // allowed, denied or "" (default)
 	Visible         bool      `json:"visible"` // effective result under the current mode
+	// Send is the chat's explicit send policy (none, confirm, direct) or ""
+	// for the daemon's default; see sendpolicy.go.
+	Send string `json:"send"`
 }
 
 // ListAccess lists cached chats with their access state, most recent first.
@@ -180,8 +183,8 @@ func (s *Store) ListAccess(ctx context.Context, query string, limit int) ([]Acce
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.jid, COALESCE(c.name, ''), c.last_message_time, COALESCE(a.state, ''), `+accessFilter("c.jid")+`
-		FROM chats c LEFT JOIN chat_access a ON a.jid = c.jid
+		SELECT c.jid, COALESCE(c.name, ''), c.last_message_time, COALESCE(a.state, ''), `+accessFilter("c.jid")+`, COALESCE(p.policy, '')
+		FROM chats c LEFT JOIN chat_access a ON a.jid = c.jid LEFT JOIN chat_send_policy p ON p.jid = c.jid
 		ORDER BY c.last_message_time DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list access: %w", err)
@@ -192,7 +195,7 @@ func (s *Store) ListAccess(ctx context.Context, query string, limit int) ([]Acce
 	for rows.Next() {
 		var e AccessEntry
 		var ts sql.NullTime
-		if err := rows.Scan(&e.JID, &e.Name, &ts, &e.State, &e.Visible); err != nil {
+		if err := rows.Scan(&e.JID, &e.Name, &ts, &e.State, &e.Visible, &e.Send); err != nil {
 			return nil, err
 		}
 		raw := e.Name

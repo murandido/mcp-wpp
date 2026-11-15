@@ -22,7 +22,7 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 </style>
 </head><body>
 <h1>Outbox</h1>
-<p class="lead">The AI proposed these actions. Nothing is sent until you approve it. Proposals expire after 15 minutes.</p>
+<p class="lead">The AI proposed these actions. Nothing is sent until you approve it. Proposals expire after 15 minutes; a proposed scheduled message waits until its send time.</p>
 {{if .Error}}<div class="card err"><strong>Error:</strong> {{.Error}}</div>{{end}}
 <section class="card">
 <h2>Awaiting approval</h2>
@@ -30,12 +30,26 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 <div class="card">
 <pre style="white-space:pre-wrap;margin:0 0 .75rem;font-family:ui-monospace,monospace">{{.Summary}}</pre>
 <div class="row">
-<small>#{{.ID}} · expires {{.ExpiresAt.Local.Format "15:04:05"}}</small>
-<form class="inline" method="post" action="/outbox/{{.ID}}/approve"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="go" type="submit">Approve and send</button></form>
+{{if .SendAt}}<small>#{{.ID}} · to be sent {{.SendAt.Local.Format "2006-01-02 15:04 MST"}}</small>
+<form class="inline" method="post" action="/outbox/{{.ID}}/approve"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="go" type="submit">Approve schedule</button></form>
+{{else}}<small>#{{.ID}} · expires {{.ExpiresAt.Local.Format "15:04:05"}}</small>
+<form class="inline" method="post" action="/outbox/{{.ID}}/approve"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="go" type="submit">Approve and send</button></form>{{end}}
 <form class="inline" method="post" action="/outbox/{{.ID}}/reject"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="no" type="submit">Reject</button></form>
 </div>
 </div>
 {{else}}<p class="muted">Nothing is waiting.</p>{{end}}
+</section>
+<section class="card">
+<h2>Scheduled</h2>
+{{range .Scheduled}}
+<div class="card">
+<pre style="white-space:pre-wrap;margin:0 0 .75rem;font-family:ui-monospace,monospace">{{.Summary}}</pre>
+<div class="row">
+<small>#{{.ID}} · sends {{if .SendAt}}{{.SendAt.Local.Format "2006-01-02 15:04 MST"}}{{end}}</small>
+<form class="inline" method="post" action="/outbox/{{.ID}}/cancel"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="no" type="submit">Cancel</button></form>
+</div>
+</div>
+{{else}}<p class="muted">No scheduled messages.</p>{{end}}
 </section>
 <section class="card">
 <h2>Recent</h2>
@@ -44,5 +58,5 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 {{else}}<tr><td colspan="3" class="muted">No proposals yet.</td></tr>{{end}}
 </table>
 </section>
-<p><small>From a terminal: <code>wpp-mcp outbox</code>, <code>wpp-mcp outbox approve &lt;id&gt;</code>.</small></p>
+<p><small>From a terminal: <code>wpp-mcp outbox</code>, <code>wpp-mcp outbox approve &lt;id&gt;</code>, <code>wpp-mcp outbox cancel &lt;id&gt;</code>, <code>wpp-mcp schedule</code>.</small></p>
 </body></html>

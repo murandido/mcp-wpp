@@ -34,7 +34,8 @@ Commands:
   token        API tokens for MCP clients: scoped, chat-limited, revocable (create, list, revoke)
   audit        Show the audit log of tool calls and operator actions
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
-  outbox       Approve or reject what the AI proposed to send (with serve -write)
+  outbox       Approve, reject or cancel what the AI proposed or scheduled (with serve -write)
+  schedule     Have the daemon send a message at a later time (with serve -write)
   open-ui      Print a single-use browser login link (-page /pair, /access or /outbox)
   encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
   login        Pair without a daemon (pair falls back to this automatically)
@@ -56,7 +57,7 @@ serve flags:
   -allow-remote          Allow binding to a non-loopback address
   -allowed-host LIST     Extra Host/Origin values to accept, e.g. a reverse proxy hostname
   -write                 Expose tools that send or change the account (default: read-only)
-  -confirm-sends         With -write, sends wait for your approval (default true)
+  -confirm-sends         With -write, default send policy: confirm (true, default) or direct (false)
   -tools LIST            Tool groups or names to expose (default: core,messaging,transcribe,labels,access)
   -disable-tools LIST    Tool groups or names to hide
   -max-sends-per-hour N  Outbound send cap (default 30)
@@ -134,6 +135,8 @@ func main() {
 		code = runSmoke(storeDir, redactor, rest)
 	case "outbox":
 		code = runOutbox(storeDir, rest)
+	case "schedule":
+		code = runSchedule(storeDir, rest)
 	case "access":
 		code = runAccess(storeDir, rest)
 	case "token":

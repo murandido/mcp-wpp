@@ -38,7 +38,7 @@ func runTools(args []string) int {
 	fmt.Println()
 	fmt.Println("- **Default**: exposed without `-tools`. Opt-in groups are enabled with `-tools default,groups` (or `all`).")
 	fmt.Println("- **Read-only**: available without `-write`.")
-	fmt.Println("- **Approval**: with `-write`, the call becomes a proposal you approve with `wpp-mcp outbox` (unless `-confirm-sends=false`).")
+	fmt.Println("- **Approval**: with `-write`, the call follows the target chat's send policy (`wpp-mcp access send`): `confirm` (the default unless `-confirm-sends=false`) makes it a proposal you approve with `wpp-mcp outbox`, `direct` acts at once, `none` refuses it. Tools without a chat use the default.")
 	fmt.Println("- **Chat access**: which chats the tool can reach under the access policy.")
 	group := ""
 	for _, t := range cat {

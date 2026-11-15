@@ -5,12 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
-// Outbox of proposed account actions awaiting the user's approval. When
-// send confirmation is on, write tools record a proposal here instead of
-// acting; the user approves or rejects it outside the conversation.
+// Outbox of proposed account actions awaiting the user's approval, and of
+// scheduled messages. When a chat's send policy is "confirm", write tools
+// record a proposal here instead of acting; the user approves or rejects it
+// outside the conversation. Scheduled messages (send_at set) live in the
+// same table so `wpp-mcp outbox` is the single place to see what will be
+// sent; see schedule.go for their lifecycle.
 
 const outboxSchema = `
 CREATE TABLE IF NOT EXISTS outbox (
@@ -19,13 +23,26 @@ CREATE TABLE IF NOT EXISTS outbox (
 	args_json   TEXT NOT NULL,
 	summary     TEXT NOT NULL,
 	status      TEXT NOT NULL DEFAULT 'pending'
-	            CHECK (status IN ('pending', 'sent', 'failed', 'rejected', 'expired')),
+	            CHECK (status IN ('pending', 'scheduled', 'sent', 'failed', 'rejected', 'expired', 'missed', 'cancelled')),
 	result      TEXT,
 	created_at  TIMESTAMP NOT NULL,
 	expires_at  TIMESTAMP NOT NULL,
-	decided_at  TIMESTAMP
+	decided_at  TIMESTAMP,
+	send_at     TIMESTAMP
 );
 `
+
+// Outbox statuses.
+const (
+	OutboxPending   = "pending"   // awaiting the user's approval
+	OutboxScheduled = "scheduled" // approved, waiting for send_at
+	OutboxSent      = "sent"
+	OutboxFailed    = "failed"
+	OutboxRejected  = "rejected"
+	OutboxExpired   = "expired"   // nobody decided in time
+	OutboxMissed    = "missed"    // the daemon was down too long past send_at
+	OutboxCancelled = "cancelled" // the user withdrew it
+)
 
 // ProposalTTL is how long a proposal waits for a decision.
 const ProposalTTL = 15 * time.Minute
@@ -43,6 +60,8 @@ type Proposal struct {
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	DecidedAt *time.Time `json:"decided_at,omitempty"`
+	// SendAt is set for scheduled messages: when the daemon sends it.
+	SendAt *time.Time `json:"send_at,omitempty"`
 }
 
 // ErrProposalNotPending is returned when deciding a proposal that is not
@@ -82,19 +101,24 @@ func (s *Store) CreateProposal(ctx context.Context, tool, argsJSON, summary stri
 func scanProposal(row interface{ Scan(...any) error }) (Proposal, error) {
 	var p Proposal
 	var result sql.NullString
-	var decided sql.NullTime
-	err := row.Scan(&p.ID, &p.Tool, &p.ArgsJSON, &p.Summary, &p.Status, &result, &p.CreatedAt, &p.ExpiresAt, &decided)
+	var decided, sendAt sql.NullTime
+	err := row.Scan(&p.ID, &p.Tool, &p.ArgsJSON, &p.Summary, &p.Status, &result, &p.CreatedAt, &p.ExpiresAt, &decided, &sendAt)
 	p.Result = result.String
 	if decided.Valid {
 		t := decided.Time
 		p.DecidedAt = &t
 	}
+	if sendAt.Valid {
+		t := sendAt.Time
+		p.SendAt = &t
+	}
 	return p, err
 }
 
-const proposalColumns = "id, tool, args_json, summary, status, result, created_at, expires_at, decided_at"
+const proposalColumns = "id, tool, args_json, summary, status, result, created_at, expires_at, decided_at, send_at"
 
-// ListProposals returns proposals with status ("" for all), newest first.
+// ListProposals returns proposals with status ("" for all; a comma-separated
+// list such as "pending,scheduled" for several), newest first.
 func (s *Store) ListProposals(ctx context.Context, status string) ([]Proposal, error) {
 	if err := s.expireProposals(ctx); err != nil {
 		return nil, err
@@ -102,8 +126,12 @@ func (s *Store) ListProposals(ctx context.Context, status string) ([]Proposal, e
 	q := "SELECT " + proposalColumns + " FROM outbox"
 	var args []any
 	if status != "" {
-		q += " WHERE status = ?"
-		args = append(args, status)
+		var marks []string
+		for _, st := range strings.Split(status, ",") {
+			marks = append(marks, "?")
+			args = append(args, strings.TrimSpace(st))
+		}
+		q += " WHERE status IN (" + strings.Join(marks, ", ") + ")"
 	}
 	q += " ORDER BY id DESC LIMIT 200"
 	rows, err := s.db.QueryContext(ctx, q, args...)
@@ -123,12 +151,15 @@ func (s *Store) ListProposals(ctx context.Context, status string) ([]Proposal, e
 }
 
 // ClaimProposal atomically moves a pending proposal out of the queue so it
-// can be executed exactly once, and returns it.
+// can be executed exactly once, and returns it. A proposal with a send time
+// (a scheduled message) moves to 'scheduled' instead: the scheduler sends it
+// at send_at.
 func (s *Store) ClaimProposal(ctx context.Context, id int64) (*Proposal, error) {
 	if err := s.expireProposals(ctx); err != nil {
 		return nil, err
 	}
-	res, err := s.db.ExecContext(ctx, "UPDATE outbox SET status = 'sent', decided_at = ? WHERE id = ? AND status = 'pending'", time.Now().UTC(), id)
+	res, err := s.db.ExecContext(ctx, `UPDATE outbox SET status = CASE WHEN send_at IS NULL THEN 'sent' ELSE 'scheduled' END, decided_at = ?
+		WHERE id = ? AND status = 'pending'`, time.Now().UTC(), id)
 	if err != nil {
 		return nil, err
 	}

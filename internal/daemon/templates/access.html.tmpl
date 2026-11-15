@@ -16,6 +16,7 @@ th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mut
 .allowed{color:var(--accent);border-color:var(--accent)}.denied{color:var(--deny);border-color:var(--deny)}
 form.inline{display:inline}button{font:inherit;font-size:.85rem;padding:.3rem .65rem;border-radius:.45rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
 button.go{background:var(--accent);border-color:var(--accent);color:#fff}button.no{color:var(--deny);border-color:var(--deny)}
+select{font:inherit;font-size:.85rem;padding:.25rem .4rem;border-radius:.45rem;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%;max-width:22rem}
 .row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
 @media (max-width:40rem){.hide-sm{display:none}}
@@ -23,6 +24,7 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 </head><body>
 <h1>Chat access</h1>
 <p class="lead">wpp-mcp caches every chat, but the AI only sees the chats allowed here. Changes apply immediately.</p>
+<p class="muted"><small>Sending (with <code>serve -write</code>) is set per chat: <strong>none</strong> refuses writes, <strong>confirm</strong> waits for your approval in the outbox, <strong>direct</strong> acts at once. A chat must also be visible. Chats on <em>default</em> use {{if .DefaultSend}}<strong>{{.DefaultSend}}</strong>{{else}}the daemon's default (confirm unless <code>-confirm-sends=false</code>){{end}}.</small></p>
 
 {{if .Error}}<div class="card err"><strong>Error:</strong> {{.Error}}</div>{{end}}
 
@@ -67,11 +69,20 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 <form method="get" action="/access"><input type="search" name="q" value="{{.Query}}" placeholder="Search by name or number"></form>
 </div>
 <table>
-<tr><th>Chat</th><th>Status</th><th class="hide-sm">Last message</th><th></th></tr>
+<tr><th>Chat</th><th>Status</th><th>Sending</th><th class="hide-sm">Last message</th><th></th></tr>
 {{range .Chats}}
 <tr>
 <td>{{if .Name}}{{.Name}}{{else}}<em class="muted">unnamed</em>{{end}}{{if .IsGroup}} <small>(group)</small>{{end}}<br><span class="jid">{{.JID}}</span></td>
 <td><span class="pill {{.State}}">{{stateLabel .}}</span></td>
+<td><form class="inline" method="post" action="/access/send">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="jid" value="{{.JID}}"><input type="hidden" name="q" value="{{$.Query}}">
+<select name="send" aria-label="Send policy">
+<option value="reset"{{if not .Send}} selected{{end}}>default</option>
+<option value="none"{{if eq .Send "none"}} selected{{end}}>none</option>
+<option value="confirm"{{if eq .Send "confirm"}} selected{{end}}>confirm</option>
+<option value="direct"{{if eq .Send "direct"}} selected{{end}}>direct</option>
+</select> <button type="submit">Set</button>
+</form></td>
 <td class="hide-sm"><small>{{if not .LastMessageTime.IsZero}}{{.LastMessageTime.Format "2006-01-02 15:04"}}{{end}}</small></td>
 <td>
 <form class="inline" method="post" action="/access/chat">
@@ -83,7 +94,7 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 </td>
 </tr>
 {{else}}
-<tr><td colspan="4" class="muted">No chats{{if .Query}} match &ldquo;{{.Query}}&rdquo;{{else}} cached yet; pair first and wait for the initial sync{{end}}.</td></tr>
+<tr><td colspan="5" class="muted">No chats{{if .Query}} match &ldquo;{{.Query}}&rdquo;{{else}} cached yet; pair first and wait for the initial sync{{end}}.</td></tr>
 {{end}}
 </table>
 </section>

@@ -31,6 +31,7 @@ var readOnlyToolAccess = map[string]bool{
 	"request_chat_access":       true, // records a request only; the user decides
 	"request_sync":              true,
 	"resync_labels":             true,
+	"schedule_message":          false,
 	"search_contacts":           true,
 	"send_audio_message":        false,
 	"send_contact_card":         false,
