@@ -44,6 +44,9 @@ func (p *productionDriver) IsLoggedIn() bool { return p.c.IsLoggedIn() }
 
 func (p *productionDriver) IsConnected() bool { return p.c.IsConnected() }
 
+// IsAuthenticated is what /readyz reports: connected and logged in.
+func (p *productionDriver) IsAuthenticated() bool { return p.c.IsAuthenticated() }
+
 func (p *productionDriver) StartPairing(ctx context.Context, onQR func(string), onSuccess func(), onExpired func()) error {
 	if p.newPairingSession == nil {
 		return errors.New("pairing session factory is not configured")

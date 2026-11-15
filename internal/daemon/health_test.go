@@ -81,3 +81,42 @@ func TestPublicHealthAndReadiness(t *testing.T) {
 		t.Fatalf("POST healthz: got %d", res.StatusCode)
 	}
 }
+
+type authDriver struct {
+	healthDriver
+	authenticated atomic.Bool
+}
+
+func (d *authDriver) IsAuthenticated() bool { return d.authenticated.Load() }
+
+// A socket can be connected while WhatsApp has not accepted the login (right
+// after pairing, or with a revoked session); readiness must say not ready.
+func TestReadiness_RequiresAuthentication(t *testing.T) {
+	d := &authDriver{healthDriver: healthDriver{fakePairDriver: newFakePairDriver(true)}}
+	d.connected.Store(true)
+	s, err := New(Config{Addr: "127.0.0.1:0", Driver: d, AuthToken: testToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+	<-s.listenerOK
+	waitFor(t, s.Cache().Paired, "paired")
+
+	ready := func() int {
+		res, err := http.Get("http://" + s.BoundAddr() + "/readyz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	if got := ready(); got != http.StatusServiceUnavailable {
+		t.Fatalf("connected but not authenticated: got %d, want 503", got)
+	}
+	d.authenticated.Store(true)
+	if got := ready(); got != http.StatusOK {
+		t.Fatalf("authenticated: got %d, want 200", got)
+	}
+}

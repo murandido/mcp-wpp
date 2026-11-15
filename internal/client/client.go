@@ -428,6 +428,14 @@ func (c *Client) IsConnected() bool {
 	return c.wa.IsConnected()
 }
 
+// IsAuthenticated reports whether WhatsApp accepted this device's login on
+// the current connection. A socket can be connected without it, for example
+// right after pairing or when the session was revoked, and then no messages
+// arrive; readiness checks must use this, not IsConnected.
+func (c *Client) IsAuthenticated() bool {
+	return c.wa.IsLoggedIn()
+}
+
 // AddLoggedOutHandler registers a callback that fires when whatsmeow emits
 // an events.LoggedOut event (i.e. the remote device has revoked this
 // session). The callback runs in whatsmeow's event goroutine; keep it
