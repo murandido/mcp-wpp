@@ -182,9 +182,64 @@ The AI can do the same with the `schedule_message` tool, under the chat's send p
 
 Send times must be in the future and at most 30 days ahead. At the send time the daemon checks access and the send policy again (a chat hidden meanwhile is not sent to), then sends through the usual rate limiter. Each message is claimed once, so it is never sent twice. Scheduled messages are kept in the encrypted database and survive restarts; one that came due while the daemon was down is still sent if it is at most one hour late, and marked `missed` otherwise. If the account is paired but momentarily disconnected, the daemon waits for the connection within that hour. A daemon started without `-write` neither exposes `schedule_message` nor sends scheduled messages; they stay queued until a `-write` daemon runs.
 
-## Catching up
+## Catching up and webhooks
 
 The `digest` tool answers "what did I miss": per allowed chat, the new messages since a cut-off. It can keep only unread messages (`only_unread`, using the read receipts your phone sends and `mark_read`), only messages that @-mention you (`mentions_only`), or only those matching `keywords`, and it can group by `sender` instead of chat.
+
+For event-driven automation, `serve -webhook-url URL -webhook-secret SECRET` POSTs each live incoming message to your endpoint:
+
+- **Only allowed chats.** The access policy is checked when each request is sent, so hiding a chat also stops what is queued for it. `-webhook-chats` (JIDs or phone numbers) and `-webhook-keywords` (case- and accent-insensitive) narrow it further. History sync, your own messages and status updates are never sent.
+- **No text by default.** The payload carries who wrote, where, when and whether there is media. `-webhook-include-text` adds the text and captions: they then leave this machine, to whoever runs the endpoint. Media bytes are never sent.
+- **HTTPS** is required unless the host is loopback or on a private network (a private IP, `localhost` or a single-label name such as a compose service). Redirects are not followed.
+- **Best effort.** Delivery never slows message handling: messages wait in a bounded in-memory queue (500; the oldest is dropped, with a warning, when it is full), and each request is tried 3 times with exponential backoff (2 s, 4 s) and a 10 s timeout. Messages from the same chat within 10 seconds are sent together. Anything still queued when the daemon stops is lost, and a retry can repeat a request: deduplicate on `delivery_id`.
+
+Each request is a JSON object with one or more messages of one chat:
+
+```json
+{
+  "version": 1,
+  "type": "messages.received",
+  "delivery_id": "6f1c0b6a1f6e4e0b9d0f3c2a5b7e8d91",
+  "chat": {"jid": "120363000000000001@g.us", "name": "Family", "is_group": true},
+  "messages": [
+    {
+      "id": "3EB0C8F1A2B3C4D5E6F7",
+      "timestamp": "2026-11-15T12:03:04Z",
+      "sender": {"jid": "447700900123@s.whatsapp.net", "name": "Alice"},
+      "has_media": true,
+      "media_type": "image"
+    }
+  ]
+}
+```
+
+With `-webhook-include-text`, each message also has `"text": "..."` (omitted when empty).
+
+### Verifying a request
+
+The headers are `X-Wpp-Mcp-Timestamp` (Unix seconds), `X-Wpp-Mcp-Signature: sha256=<hex>`, `X-Wpp-Mcp-Delivery` and `X-Wpp-Mcp-Event`. The signature is the HMAC-SHA256, keyed with the secret, of `<timestamp>.<raw body>`. Compare it in constant time and reject timestamps more than five minutes old, so a captured request cannot be replayed.
+
+```go
+func verify(secret string, r *http.Request, body []byte) bool {
+	ts := r.Header.Get("X-Wpp-Mcp-Timestamp")
+	sec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil || math.Abs(time.Since(time.Unix(sec, 0)).Seconds()) > 300 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(ts + "."))
+	mac.Write(body)
+	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(want), []byte(r.Header.Get("X-Wpp-Mcp-Signature")))
+}
+```
+
+```bash
+# $TS is the X-Wpp-Mcp-Timestamp header, body.json the raw request body
+printf '%s.' "$TS" | cat - body.json | openssl dgst -sha256 -hmac "$WPP_MCP_WEBHOOK_SECRET" | sed 's/^.* /sha256=/'
+```
+
+Generate the secret with `openssl rand -hex 32` (16 characters at least).
 
 ## Encryption at rest
 
@@ -219,6 +274,11 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -audit-days` | `WPP_MCP_AUDIT_DAYS` | 90 | Keep the audit log N days; 0 disables auditing |
 | `serve -enable-labels` | `WPP_MCP_LABELS` | off | WhatsApp Business label sync and tools |
 | `serve -full-history` | `WPP_MCP_FULL_HISTORY` | off | Ask for a full history sync when pairing |
+| `serve -webhook-url` | `WPP_MCP_WEBHOOK_URL` | | POST live incoming messages from allowed chats here (see [Catching up and webhooks](#catching-up-and-webhooks)) |
+| `serve -webhook-secret` | `WPP_MCP_WEBHOOK_SECRET` | | HMAC-SHA256 signing secret, required with a URL |
+| `serve -webhook-include-text` | `WPP_MCP_WEBHOOK_INCLUDE_TEXT` | off | Include message text and captions: they leave the machine |
+| `serve -webhook-chats` | `WPP_MCP_WEBHOOK_CHATS` | all allowed | Comma-separated chat JIDs or phone numbers |
+| `serve -webhook-keywords` | `WPP_MCP_WEBHOOK_KEYWORDS` | | Comma-separated words; only matching messages |
 | | `WPP_MCP_PAIR_PHONE` | | Print a pairing code at startup when unpaired |
 | | `WPP_MCP_MEDIA_ROOT` | `<store>/uploads` | Only directory `send_file` may read from and `output_path` may write to |
 | | `WPP_MCP_TRANSCRIBE_URL` | | OpenAI-compatible speech-to-text endpoint |

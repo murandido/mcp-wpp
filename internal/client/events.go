@@ -218,6 +218,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if pollOptions != nil {
 		c.replayPendingPollVotes([]string{msg.Info.Chat.String()})
 	}
+	c.notifyIncoming(msg, nm, name)
 
 	direction := "<-"
 	if msg.Info.IsFromMe {

@@ -72,6 +72,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.BoolVar(&allowRemote, "allow-remote", false, "allow binding to a non-loopback address")
 	fs.StringVar(&allowedHosts, "allowed-host", os.Getenv("WPP_MCP_ALLOWED_HOSTS"), "extra comma-separated Host/Origin values to accept, e.g. a reverse proxy hostname (env WPP_MCP_ALLOWED_HOSTS)")
 	fullHistoryFlag := registerFullHistory(fs)
+	hooks, err := registerWebhookFlags(fs, os.Getenv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	fs.BoolVar(&write, "write", write, "expose tools that send messages or change the WhatsApp account (env WPP_MCP_WRITE); default is read-only")
 	fs.BoolVar(&labelsEnabled, "enable-labels", labelsEnabled, "enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)")
 	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
@@ -103,6 +108,13 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	if maxPerHour < 1 {
 		fmt.Fprintln(os.Stderr, "-max-sends-per-hour must be at least 1")
 		return 2
+	}
+	webhookCfg := hooks.config()
+	if webhookCfg.Enabled() {
+		if err := webhookCfg.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+			return 2
+		}
 	}
 	selection := &mcpsrv.ToolSelection{Enable: mcpsrv.ParseToolList(tools), Disable: mcpsrv.ParseToolList(disableTools)}
 
@@ -175,6 +187,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init client: %v\n", err)
 		return 1
+	}
+
+	if err := startWebhook(ctx, webhookCfg, c, st, redactor); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
 	}
 
 	drv := newProductionDriver(c)

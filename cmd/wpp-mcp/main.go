@@ -65,6 +65,11 @@ serve flags:
   -audit-days N          Keep the audit log N days (default 90, env WPP_MCP_AUDIT_DAYS; 0 disables it)
   -enable-labels         Enable WhatsApp Business label sync and tools
   -full-history          Ask the phone for a full history sync on a new pairing
+  -webhook-url URL       POST live incoming messages from allowed chats here (signed)
+  -webhook-secret S      HMAC-SHA256 signing secret, required with -webhook-url
+  -webhook-include-text  Include message text in webhooks (it leaves the machine)
+  -webhook-chats LIST    Only these chats (JIDs or phone numbers)
+  -webhook-keywords LIST Only messages containing one of these words
 
 Every HTTP route except /healthz and /readyz requires the operator bearer
 token that serve stores in <store>/token (or WPP_MCP_TOKEN). /mcp also
