@@ -41,7 +41,9 @@ docker compose exec wpp-mcp wpp-mcp access allow "Family"
 
 > **Back up `secrets/wpp_mcp_key`.** Without it `data/` cannot be read, and nobody can recover it.
 
-The container runs as your user (`WPP_UID`/`WPP_GID`, default 1000) with a read-only root filesystem, no capabilities, and its port published on `127.0.0.1` only. Build locally with `docker compose build`.
+The container runs as your user (`WPP_UID`/`WPP_GID`, default 1000) with a read-only root filesystem, no capabilities, and its port published on `127.0.0.1` only.
+
+To update, `docker compose pull && docker compose up -d`. Pin a release with `WPP_MCP_TAG=0.1.0` instead of `latest`. To build from source instead, run `WPP_MCP_VERSION=$(git describe --tags --always) docker compose build`, so `wpp-mcp -version` reports what you built.
 
 ### Native (Linux, macOS)
 
