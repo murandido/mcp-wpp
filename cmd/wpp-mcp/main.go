@@ -65,9 +65,14 @@ serve flags:
   -retain-days N         Delete cached messages and media older than N days (default 0: keep)
   -enable-labels         Enable WhatsApp Business label sync and tools
   -full-history          Ask the phone for a full history sync on a new pairing
+  -alert-url URL         POST session alerts (down, logged out, recovered) here (env WPP_MCP_ALERT_URL)
+  -alert-after D         Alert after a paired session is unauthenticated this long (default 5m)
+  -alert-format F        json (default) or text (ntfy.sh)
+  -alert-header H        Extra "Name: value" header on alert requests (env WPP_MCP_ALERT_HEADER)
 
 Every HTTP route except /healthz and /readyz requires the bearer token that
-serve stores in <store>/token (or WPP_MCP_TOKEN).
+serve stores in <store>/token (or WPP_MCP_TOKEN). GET /admin/metrics serves
+Prometheus metrics to the same token.
 `
 
 func main() {

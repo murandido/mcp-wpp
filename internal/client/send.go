@@ -78,6 +78,7 @@ func (c *Client) send(ctx context.Context, recipient, message, mediaPath string,
 	if err != nil {
 		return SendResult{Success: false, Message: fmt.Sprintf("Error sending message: %v", err)}
 	}
+	c.countSent()
 
 	// Cache the sent message so local history stays complete.
 	c.persistSent(ctx, recipientJID, resp.ID, message, mediaPath, msg)
@@ -121,7 +122,11 @@ func (c *Client) sendMessage(ctx context.Context, to types.JID, msg *waProto.Mes
 	if err := c.checkSendRate(ctx, to); err != nil {
 		return whatsmeow.SendResponse{}, err
 	}
-	return c.waSend(ctx, to, msg)
+	resp, err := c.waSend(ctx, to, msg)
+	if err == nil {
+		c.countSent()
+	}
+	return resp, err
 }
 
 // ephemeralContextInfo returns the MessageContextInfo carrying the group's

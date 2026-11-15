@@ -67,6 +67,7 @@ type Client struct {
 	labelsEnabled    bool
 	statusMu         sync.RWMutex
 	status           ConnectionStatus
+	stats            clientStats // metrics counters (stats.go)
 
 	// mediaRetries tracks media retry receipts awaiting the phone's answer
 	// (see mediaretry.go); mediaRetryTimeout overrides

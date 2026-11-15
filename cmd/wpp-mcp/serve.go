@@ -79,7 +79,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
 	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, record sends and account changes as proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately (env WPP_MCP_CONFIRM_SENDS)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
+	monitoring := registerMonitoringFlags(fs)
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := monitoring.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
 	if retainDays < 0 {
@@ -169,6 +174,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 
 	drv := newProductionDriver(c)
+	ops, err := monitoring.startOperations(ctx, c, st)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 1
+	}
 
 	// The daemon owns the pair cache, so build it first, then hand the cache
 	// to the MCP server (so pairing_status can surface the live QR), then
@@ -180,6 +190,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		AllowedHosts:  mcpsrv.ParseToolList(allowedHosts),
 		AutoPairPhone: os.Getenv("WPP_MCP_PAIR_PHONE"),
 		Access:        st,
+		AdminMount:    ops.mount,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "daemon.New: %v\n", err)
@@ -208,6 +219,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	if labelsEnabled {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
+	mcpServer.ObserveToolCalls(ops.observeTool)
 	d.SetMCPMount(mcpServer.AttachHTTP)
 	if write && confirmSends {
 		d.SetOutbox(mcpServer)

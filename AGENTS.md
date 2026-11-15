@@ -6,11 +6,13 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 
 ```text
 cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
+internal/alert/      session alerts: state machine (down/logged out/up) and webhook notifier with retries
 internal/backup/     encrypted backup archives, verify, restore, key rotation (crash-safe, see rekey.go)
 internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features
 internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
 internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
 internal/mcp/        mcp-go server: tool registrations, access middleware, confirmation (outbox), profiles, catalog
+internal/metrics/    Prometheus text exposition for GET /admin/metrics
 internal/store/      SQLite cache: queries, access policy (scoped views), FTS5 index, outbox, digest, retention
 internal/transcribe/ OpenAI-compatible speech-to-text client
 internal/security/   path allowlisting, filename sanitising, log redaction
@@ -32,6 +34,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 6. **Writes need consent**: with `-write`, tools that send or change the account create outbox proposals (`internal/mcp/outbox.go`). Only trivial self-visible actions are in `noConfirm`. Approval re-runs the access middleware.
 7. **Pairing never goes through MCP.** `pairing_status` must not return QR payloads or codes.
 8. **Logs stay redacted** through `security.Redactor`, and phone numbers are masked.
+9. **Operational output carries no personal data.** Metric labels take values from fixed sets (tool names, outcomes, states); alert payloads hold an event kind, a time and a fixed message. Backup archives exclude the key file and the token.
 
 ## Build and test
 
