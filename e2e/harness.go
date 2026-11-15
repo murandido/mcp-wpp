@@ -75,7 +75,9 @@ func newSeededHarness(t *testing.T, seed func(storeDir string), serveArgs ...str
 	h := &harness{t: t, cmd: cmd, addr: addr, store: storeDir, bin: bin}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
 
-	h.waitForReady(5 * time.Second)
+	// Generous: under a loaded CI or `make check`, the daemon can take more
+	// than a few seconds to come up; a fast start returns immediately.
+	h.waitForReady(30 * time.Second)
 	return h
 }
 
