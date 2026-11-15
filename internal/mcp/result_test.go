@@ -238,3 +238,16 @@ func TestDownloadMediaResult_OversizedNotInlined(t *testing.T) {
 		t.Fatalf("expected 1 content block for oversized file, got %d", len(res.Content))
 	}
 }
+
+func TestResultJSON_EmptyListIsArray(t *testing.T) {
+	var none []string
+	res, _ := resultJSON(none)
+	if got := res.Content[0].(mcp.TextContent).Text; got != "[]" {
+		t.Fatalf("nil slice rendered as %q, want []", got)
+	}
+	var chat *struct{ JID string }
+	res, _ = resultJSON(chat)
+	if got := res.Content[0].(mcp.TextContent).Text; got != "null" {
+		t.Fatalf("nil pointer rendered as %q, want null", got)
+	}
+}

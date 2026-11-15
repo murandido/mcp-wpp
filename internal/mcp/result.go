@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -13,6 +14,11 @@ import (
 
 // resultJSON serialises v to JSON and wraps it in a text tool result.
 func resultJSON(v any) (*mcp.CallToolResult, error) {
+	// An empty list is [], not null: clients iterate it without a nil check.
+	// Nil pointers (e.g. get_chat on an unknown chat) stay null on purpose.
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
+		v = []any{}
+	}
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("marshal: %v", err)), nil
