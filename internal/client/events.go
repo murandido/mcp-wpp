@@ -66,6 +66,9 @@ func (c *Client) StartEventHandler() {
 			c.log.Infof("Offline sync completed - %d messages synced", v.Count)
 		case *events.Receipt:
 			c.log.Debugf("Receipt for %d messages: %s", len(v.MessageIDs), v.Type)
+			c.handleReceipt(v)
+		case *events.MarkChatAsRead:
+			c.handleMarkChatAsRead(v)
 		case *events.UndecryptableMessage:
 			c.log.Warnf("Undecryptable message from %s", c.redactor.JID(v.Info.Sender.String()))
 		default:
@@ -87,6 +90,7 @@ type normalizedMessage struct {
 	fileLength    uint64
 	senderFullJID string // post-LID sender as "user@server"
 	chatJID       string // post-LID-normalised chat JID
+	mentionsMe    bool   // a context info mentions the account (incoming only)
 }
 
 // normalizeIncomingMessage resolves sender and chat JIDs (LID → phone),
@@ -157,6 +161,7 @@ func (c *Client) normalizeIncomingMessage(
 		fileLength:    fileLength,
 		senderFullJID: normalizedSender,
 		chatJID:       chatJID,
+		mentionsMe:    !isFromMe && mentionsAny(raw, c.ownUsers()),
 	}
 }
 
@@ -213,6 +218,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if pollOptions != nil {
 		c.replayPendingPollVotes([]string{msg.Info.Chat.String()})
 	}
+	c.notifyIncoming(msg, nm, name)
 
 	direction := "<-"
 	if msg.Info.IsFromMe {
@@ -476,6 +482,11 @@ func pollCreation(m *waProto.Message) *waProto.PollCreationMessage {
 func (c *Client) storeNormalized(ctx context.Context, nm normalizedMessage, pollOptions []string) error {
 	if err := c.store.StoreMessage(ctx, nm.msg, nm.mediaKey, nm.fileSHA256, nm.fileEncSHA256, nm.fileLength); err != nil {
 		return err
+	}
+	if nm.mentionsMe {
+		if err := c.store.SetMentionsMe(ctx, nm.msg.ID, nm.msg.ChatJID); err != nil {
+			return err
+		}
 	}
 	if len(pollOptions) > 0 {
 		if err := c.store.StorePollMetadata(ctx, nm.msg.ID, nm.msg.ChatJID, pollOptions); err != nil {

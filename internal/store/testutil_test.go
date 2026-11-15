@@ -47,6 +47,11 @@ func openTestStore(t *testing.T) *Store {
 		t.Fatalf("apply seed: %v", err)
 	}
 
+	if err := applyDigestSchema(db); err != nil {
+		db.Close()
+		t.Fatalf("digest schema: %v", err)
+	}
+
 	// A second handle to the same shared-cache DB, playing the role of
 	// whatsmeowDB. LID lookups hit the same underlying tables.
 	waDB, err := sql.Open("sqlite3", dsn)

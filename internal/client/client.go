@@ -86,6 +86,8 @@ type Client struct {
 	// rate-limited sendMessage); tests replace them.
 	isConnected func() bool
 	waSend      func(context.Context, types.JID, *waProto.Message, ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
+	// incomingHook receives live incoming messages (see incoming.go).
+	incomingHook func(IncomingMessage)
 }
 
 // newWAClient creates the whatsmeow client for device. whatsmeow logs through
