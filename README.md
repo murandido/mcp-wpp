@@ -142,6 +142,66 @@ Proposals expire after 15 minutes. Read receipts, typing and presence skip the q
 - If the store already lives on an encrypted disk and you prefer no key file, use `-no-encryption` (`WPP_MCP_NO_ENCRYPTION=1`).
 - Files you export with `download_media`'s `output_path` are plaintext by design.
 
+## Operations
+
+### Backups
+
+`wpp-mcp backup -out FILE` writes a consistent snapshot of the store while `serve` keeps running. The databases are copied with SQLite's online backup API inside a single read transaction, so the copy is consistent and the daemon keeps writing during it. The archive is a plain tar with mode 0600:
+
+- `messages.db` and `whatsapp.db`, still SQLCipher-encrypted with your key;
+- the media cache, byte for byte (files stay sealed);
+- `manifest.json`: format version, creation time, wpp-mcp version, a key fingerprint, a schema summary and the SHA-256 of every file.
+
+Nothing is decrypted on the way, not even into temporary files. Two things are left out on purpose. **The key file** is not included: an archive that carried its key would protect nothing, so back the key up separately (a password manager works). Without it the backup cannot be read. **The token** is not included either: it is a credential, and `serve` makes a new one when it is missing. `uploads/` is not included because it holds your own outbound files.
+
+```bash
+wpp-mcp backup -out ~/backups/wpp-$(date +%F).tar
+wpp-mcp backup verify ~/backups/wpp-2026-11-15.tar   # checksums, key, database integrity, media authentication
+```
+
+With Docker, write the archive into the mounted data directory (run `mkdir -p data/backups` on the host first):
+
+```bash
+docker compose exec -T wpp-mcp wpp-mcp backup -out /data/backups/wpp-$(date +%F).tar
+```
+
+`-out -` streams the archive to stdout instead. Verification fails with a clear message if the configured key is not the one the backup was made with.
+
+To restore, stop the daemon. `restore` takes the store lock and refuses a store that already holds data unless you pass `-force`. It extracts and verifies the whole archive before it touches anything. With `-force`, the current files are moved to `<store>/.pre-restore` and deleted only once the restored store opens; if it does not, they are put back. The token and `uploads/` are kept.
+
+```bash
+wpp-mcp restore -in ~/backups/wpp-2026-11-15.tar            # into an empty store
+wpp-mcp restore -force -in ~/backups/wpp-2026-11-15.tar     # replace the current data
+
+docker compose stop wpp-mcp
+docker compose run --rm wpp-mcp restore -force -in /data/backups/wpp-2026-11-15.tar
+docker compose start wpp-mcp
+```
+
+A restored store needs the key it was backed up with. The WhatsApp session in `whatsapp.db` is restored too, so the device is still linked unless it was removed from the phone in the meantime.
+
+### Key rotation
+
+`wpp-mcp rekey -new-key-file NEW` re-encrypts both databases and every cached media file with sub-keys derived from a new master key, then checks that everything opens with it. Stop the daemon first: `rekey` takes the store lock.
+
+```bash
+wpp-mcp keygen -out ~/.config/wpp-mcp/key.new
+wpp-mcp rekey -new-key-file ~/.config/wpp-mcp/key.new
+mv ~/.config/wpp-mcp/key ~/.config/wpp-mcp/key.old && mv ~/.config/wpp-mcp/key.new ~/.config/wpp-mcp/key
+```
+
+With Docker:
+
+```bash
+(umask 077; docker run --rm ghcr.io/murandido/mcp-wpp:latest keygen -out - > secrets/wpp_mcp_key.new)
+docker compose stop wpp-mcp
+docker compose run --rm -v ./secrets/wpp_mcp_key.new:/run/secrets/wpp_mcp_key_new:ro wpp-mcp rekey -new-key-file /run/secrets/wpp_mcp_key_new
+mv secrets/wpp_mcp_key secrets/wpp_mcp_key.old && mv secrets/wpp_mcp_key.new secrets/wpp_mcp_key
+docker compose up -d
+```
+
+`rekey` writes complete new-key copies of everything first, and only then swaps them in, keeping the old files until the end. If it is interrupted, every file is still readable with the old key or the new one. `serve` refuses to start until you rerun the same `rekey` command, which finishes the job. Before the swap starts, `rekey -abort` drops the copies instead. Keep the old key: backups made before the rotation still need it.
+
 ## Configuration
 
 Global flags go before the command: `wpp-mcp -store DIR serve -write`.

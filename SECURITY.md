@@ -14,6 +14,7 @@ Issues in WhatsApp's protocol handling belong to [whatsmeow](https://github.com/
 - **Other local processes and web pages are not trusted.** Every route needs the bearer token (except health probes and the single-use UI login), Host and Origin must be loopback or explicitly allowed, and browser sessions use HttpOnly, SameSite=Strict cookies with CSRF tokens.
 - **The disk is not trusted.** Databases are SQLCipher-encrypted and cached media is AES-256-GCM sealed. The key lives in a separate file, Docker secret or systemd credential.
 - **The operator is trusted.** Anyone who can read the key file and the store, or run commands as your user, can read everything. Protect your account and back up the key.
+- **Backups are as sensitive as the store, minus the key.** `wpp-mcp backup` archives the databases and media still encrypted with the store's key, and never includes the key file or the token. Anyone holding both an archive and its key can read it, so keep them apart. If a key may have leaked, rotate it with `wpp-mcp rekey`; archives made before the rotation stay readable with the old key.
 
 ## Out of scope
 
