@@ -6,12 +6,12 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 
 ```text
 cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, open-ui, tools, healthcheck, smoke
-internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features
+internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features, read state and mentions
 internal/auth/       caller identity on the request context, client token format and hashing
 internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
 internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
 internal/mcp/        mcp-go server: tool registrations, audit, scope and access middlewares, send policy and confirmation (outbox), scheduler, profiles, catalog
-internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest, retention, API tokens, audit log
+internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, audit log
 internal/transcribe/ OpenAI-compatible speech-to-text client
 internal/security/   path allowlisting, filename sanitising, log redaction
 e2e/                 end-to-end tests against the real binary (build tag e2e)

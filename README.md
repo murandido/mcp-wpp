@@ -182,6 +182,10 @@ The AI can do the same with the `schedule_message` tool, under the chat's send p
 
 Send times must be in the future and at most 30 days ahead. At the send time the daemon checks access and the send policy again (a chat hidden meanwhile is not sent to), then sends through the usual rate limiter. Each message is claimed once, so it is never sent twice. Scheduled messages are kept in the encrypted database and survive restarts; one that came due while the daemon was down is still sent if it is at most one hour late, and marked `missed` otherwise. If the account is paired but momentarily disconnected, the daemon waits for the connection within that hour. A daemon started without `-write` neither exposes `schedule_message` nor sends scheduled messages; they stay queued until a `-write` daemon runs.
 
+## Catching up
+
+The `digest` tool answers "what did I miss": per allowed chat, the new messages since a cut-off. It can keep only unread messages (`only_unread`, using the read receipts your phone sends and `mark_read`), only messages that @-mention you (`mentions_only`), or only those matching `keywords`, and it can group by `sender` instead of chat.
+
 ## Encryption at rest
 
 - `messages.db` and `whatsapp.db` (your session and Signal keys) are SQLCipher databases. Cached media files are sealed with AES-256-GCM, each bound to its path.
