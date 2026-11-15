@@ -38,6 +38,10 @@ Commands:
   schedule     Have the daemon send a message at a later time (with serve -write)
   open-ui      Print a single-use browser login link (-page /pair, /access or /outbox)
   encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
+  backup       Write an encrypted archive of the store (-out FILE); safe while serve runs.
+               backup verify FILE checks one with the configured key
+  restore      Restore an archive (-in FILE, -force to replace data; daemon must be stopped)
+  rekey        Re-encrypt the store with a new key (-new-key-file F; daemon must be stopped)
   login        Pair without a daemon (pair falls back to this automatically)
   tools        List the MCP tools and their groups (-markdown for docs)
   healthcheck  Probe local daemon readiness (for container health checks)
@@ -154,6 +158,12 @@ func main() {
 		code = runKeygen(rest)
 	case "encrypt":
 		code = runEncrypt(storeDir, redactor, rest)
+	case "backup":
+		code = runBackup(storeDir, rest)
+	case "restore":
+		code = runRestore(storeDir, rest)
+	case "rekey":
+		code = runRekey(storeDir, rest)
 	case "stdio":
 		code = runStdio(storeDir, rest)
 	case "open-ui":

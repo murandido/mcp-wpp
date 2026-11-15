@@ -5,7 +5,8 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 ## Structure
 
 ```text
-cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, open-ui, tools, healthcheck, smoke
+cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
+internal/backup/     encrypted backup archives, verify, restore, key rotation (crash-safe, see rekey.go)
 internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features, read state and mentions
 internal/auth/       caller identity on the request context, client token format and hashing
 internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
@@ -19,7 +20,7 @@ e2e/                 end-to-end tests against the real binary (build tag e2e)
 docs/                tools.md (generated), systemd/launchd units, Claude Code hook
 ```
 
-The store directory (`-store`, `WPP_MCP_STORE`) holds `messages.db`, `whatsapp.db` (session and Signal keys), `token`, `.lock`, the media cache (`<chat>/<hex(message id)>/<file>`) and `uploads/` (the media root).
+The store directory (`-store`, `WPP_MCP_STORE`) holds `messages.db`, `whatsapp.db` (session and Signal keys), `token`, `.lock`, the media cache (`<chat>/<hex(message id)>/<file>`) and `uploads/` (the media root). Maintenance commands use hidden entries there: `.rekey-state` (an unfinished key rotation; `serve` refuses to start while it exists), `.pre-restore` and `.restore-staging`.
 
 ## Security invariants
 
@@ -28,7 +29,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 1. **Every tool is classified three times**, and tests fail otherwise: read-only or not (`readOnlyToolAccess` in `internal/mcp/tools.go`), a group (`toolGroup` in `internal/mcp/profiles.go`), and an access scope (`toolAccessScope` in `internal/mcp/access.go`). Unclassified tools fail closed.
 2. **MCP reads go through `s.store(ctx)`**, the scoped store view. A new query that returns chat content must add `s.scopeClause(...)` in `internal/store` (`accessFilter` alone ignores a client token's chat set; pair it with `s.tokenFilter`). A tool that names a chat must declare its argument in `toolAccessScope`, so the middleware checks it. Resources bypass tool middleware, so they check `allowedChat` themselves.
 3. **Hidden and nonexistent chats must be indistinguishable**: same error text, no counts, no names. `request_chat_access` returns only an ID.
-4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
+4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The one exception is `internal/backup`, which copies sealed files verbatim and, in `rekey`, re-seals them in memory with `crypto.MediaCipher`; it never writes plaintext, not even to temporary files. Database copies use `crypto.SnapshotDatabase` (online backup API between two keyed connections). The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
 5. **Every HTTP route is authenticated** except `/healthz`, `/readyz` and `/ui/login`. `/mcp` and `/admin/*` take a bearer token only, never the browser cookie. State-changing pages need a CSRF token. The Host/Origin guard wraps everything.
 6. **Writes need consent**: with `-write`, a tool that sends or changes the account follows the target chat's send policy (`chat_send_policy`, `internal/mcp/sendpolicy.go`): `none` refuses it, `confirm` creates an outbox proposal (`internal/mcp/outbox.go`), `direct` acts. Chats without a policy use the default from `-confirm-sends`; tools that target no chat always use the default. The send policy is resolved from the `toolAccessScope` argument after the access check, so it never widens visibility and a hidden chat still gets "chat not found". Only trivial self-visible actions are in `noConfirm`, and `none` still refuses them. Approval re-runs the access middleware and the send policy.
 7. **Pairing never goes through MCP.** `pairing_status` must not return QR payloads or codes.

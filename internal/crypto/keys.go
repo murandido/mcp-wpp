@@ -28,6 +28,10 @@ type Keys struct {
 	Messages []byte // messages.db (SQLCipher)
 	WhatsApp []byte // whatsapp.db: session and Signal keys (SQLCipher)
 	Media    []byte // cached media files (AES-256-GCM)
+	// Fingerprint names the master key without revealing it: 16 hex
+	// characters of a separate HKDF output. Backups and key rotation record
+	// it so a wrong key is reported as such.
+	Fingerprint string
 }
 
 // DeriveKeys expands master into the per-purpose sub-keys.
@@ -49,6 +53,11 @@ func DeriveKeys(master []byte) (*Keys, error) {
 	if k.Media, err = derive("media"); err != nil {
 		return nil, err
 	}
+	fp, err := derive("fingerprint")
+	if err != nil {
+		return nil, err
+	}
+	k.Fingerprint = hex.EncodeToString(fp[:8])
 	return &k, nil
 }
 
