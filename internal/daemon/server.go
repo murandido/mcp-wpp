@@ -141,8 +141,14 @@ func (s *Server) Run(ctx context.Context) error {
 		writeProbe(w, http.StatusOK, "ok", true)
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		driver, ok := s.cfg.Driver.(interface{ IsConnected() bool })
-		ready := ok && s.cache.Paired() && driver.IsConnected()
+		// Ready means WhatsApp accepted the login, not merely that a socket
+		// is open: a connected but unauthenticated client receives nothing.
+		ready := false
+		if d, ok := s.cfg.Driver.(interface{ IsAuthenticated() bool }); ok {
+			ready = s.cache.Paired() && d.IsAuthenticated()
+		} else if d, ok := s.cfg.Driver.(interface{ IsConnected() bool }); ok {
+			ready = s.cache.Paired() && d.IsConnected()
+		}
 		code := http.StatusServiceUnavailable
 		if ready {
 			code = http.StatusOK

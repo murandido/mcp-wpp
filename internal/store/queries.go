@@ -258,7 +258,8 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 		}
 	}
 	for jid, name := range names {
-		if seen[jid] {
+		// Like the chat query above, skip LIDs with no known phone number.
+		if seen[jid] || strings.HasSuffix(jid, "@lid") {
 			continue
 		}
 		// Address-book entries without an authorised chat stay hidden.
