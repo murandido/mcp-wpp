@@ -226,3 +226,36 @@ func TestAddressBookNamesForNumberChats(t *testing.T) {
 		t.Fatal("isNumberName misclassifies")
 	}
 }
+
+// Contacts synced under a LID must still name the chat cached under the
+// phone number (via whatsmeow_lid_map).
+func TestAddressBookNamesForLIDContacts(t *testing.T) {
+	s := openAccessStore(t)
+	ctx := context.Background()
+	const pn = "5562990000002@s.whatsapp.net"
+	if err := s.StoreChat(pn, "269458362876067", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO whatsmeow_lid_map (lid, pn) VALUES ('269458362876067', '5562990000002')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO whatsmeow_contacts (our_jid, their_jid, full_name) VALUES ('me', '269458362876067@lid', 'Julia')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListAccess(ctx, "julia", 10)
+	if err != nil || len(got) != 1 || got[0].JID != pn || got[0].Name != "Julia" {
+		t.Fatalf("ListAccess by LID contact name = %+v, %v", got, err)
+	}
+	if name := s.ContactName(pn); name != "Julia" {
+		t.Fatalf("ContactName(%s) = %q", pn, name)
+	}
+	_ = s.SetChatAccess(ctx, pn, AccessAllowed, "")
+	chats, err := s.Scoped().ListChats(ctx, "Julia", 10, 0, false, "name")
+	if err != nil || len(chats) != 1 || chats[0].Name != "Julia" {
+		t.Fatalf("list_chats by LID contact name: %+v, %v", chats, err)
+	}
+	contacts, _ := s.Scoped().SearchContacts(ctx, "Julia")
+	if len(contacts) != 1 || contacts[0].JID != pn {
+		t.Fatalf("search_contacts by LID contact name: %+v", contacts)
+	}
+}

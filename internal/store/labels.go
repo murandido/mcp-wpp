@@ -210,16 +210,18 @@ func (s *Store) addressBookName(ctx context.Context, jid string) string {
 	if s.whatsmeowDB == nil {
 		return ""
 	}
-	var full, push, biz sql.NullString
-	err := s.whatsmeowDB.QueryRowContext(ctx,
-		"SELECT full_name, push_name, business_name FROM whatsmeow_contacts WHERE their_jid = ? LIMIT 1", jid).
-		Scan(&full, &push, &biz)
-	if err != nil {
-		return ""
-	}
-	for _, v := range []sql.NullString{full, biz, push} {
-		if v.Valid && v.String != "" {
-			return v.String
+	for _, candidate := range s.contactJIDs(jid) {
+		var full, push, biz sql.NullString
+		err := s.whatsmeowDB.QueryRowContext(ctx,
+			"SELECT full_name, push_name, business_name FROM whatsmeow_contacts WHERE their_jid = ? LIMIT 1", candidate).
+			Scan(&full, &push, &biz)
+		if err != nil {
+			continue
+		}
+		for _, v := range []sql.NullString{full, biz, push} {
+			if v.Valid && v.String != "" {
+				return v.String
+			}
 		}
 	}
 	return ""

@@ -18,14 +18,15 @@ func (s *Store) ContactName(jid string) string {
 	if s.whatsmeowDB == nil {
 		return ""
 	}
-	jid = s.ResolveLIDToJID(jid)
-	var name sql.NullString
-	err := s.whatsmeowDB.QueryRow(
-		`SELECT `+contactNameExpr+` FROM whatsmeow_contacts WHERE their_jid = ?`, jid).Scan(&name)
-	if err != nil || !name.Valid {
-		return ""
+	for _, candidate := range s.contactJIDs(s.ResolveLIDToJID(jid)) {
+		var name sql.NullString
+		err := s.whatsmeowDB.QueryRow(
+			`SELECT `+contactNameExpr+` FROM whatsmeow_contacts WHERE their_jid = ?`, candidate).Scan(&name)
+		if err == nil && name.Valid && name.String != "" {
+			return name.String
+		}
 	}
-	return name.String
+	return ""
 }
 
 // searchContactNames returns address-book contacts whose name or JID matches
@@ -39,7 +40,7 @@ func (s *Store) searchContactNames(pattern string) map[string]string {
 	rows, err := s.whatsmeowDB.Query(`
 		SELECT their_jid, `+contactNameExpr+` AS name
 		FROM whatsmeow_contacts
-		WHERE their_jid LIKE '%@s.whatsapp.net'
+		WHERE (their_jid LIKE '%@s.whatsapp.net' OR their_jid LIKE '%@lid')
 		  AND (LOWER(full_name) LIKE LOWER(?) OR LOWER(push_name) LIKE LOWER(?)
 		    OR LOWER(first_name) LIKE LOWER(?) OR LOWER(business_name) LIKE LOWER(?)
 		    OR their_jid LIKE ?)
@@ -47,15 +48,25 @@ func (s *Store) searchContactNames(pattern string) map[string]string {
 	if err != nil {
 		return out
 	}
-	defer rows.Close()
+	type match struct{ jid, name string }
+	var matches []match
 	for rows.Next() {
 		var jid string
 		var name sql.NullString
-		if err := rows.Scan(&jid, &name); err != nil {
+		if err := rows.Scan(&jid, &name); err != nil || !name.Valid || name.String == "" {
 			continue
 		}
-		if name.Valid && name.String != "" {
-			out[jid] = name.String
+		matches = append(matches, match{jid, name.String})
+	}
+	// Close before resolving LIDs: the resolution queries the same database,
+	// and a pool of one connection would deadlock on the open cursor.
+	rows.Close()
+	for _, m := range matches {
+		// LID-keyed contacts are reported under their phone JID, which is
+		// how chats are cached; unresolved LIDs keep their LID form.
+		jid := s.ResolveLIDToJID(m.jid)
+		if _, seen := out[jid]; !seen || !strings.HasSuffix(jid, "@lid") {
+			out[jid] = m.name
 		}
 	}
 	return out
