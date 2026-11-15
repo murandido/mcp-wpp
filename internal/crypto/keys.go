@@ -133,11 +133,16 @@ func GenerateKeyFile(path string) error {
 		return err
 	}
 	if _, err := f.WriteString(key + "\n"); err != nil {
-		f.Close()
-		os.Remove(path)
+		_ = f.Close() // the write error is what matters; the file is removed
+		_ = os.Remove(path)
 		return err
 	}
-	return f.Close()
+	// A failed close can leave a truncated key behind; never keep one.
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("write key file: %w", err)
+	}
+	return nil
 }
 
 // DefaultKeyPath picks the key file location: WPP_MCP_KEY_FILE, then a
