@@ -40,7 +40,13 @@ func (c *Client) MarkRead(ctx context.Context, chatJID string, messageIDs []stri
 	ids := make([]types.MessageID, len(messageIDs))
 	copy(ids, messageIDs)
 
-	return c.wa.MarkRead(ctx, ids, time.Now(), chat, sender)
+	if err := c.wa.MarkRead(ctx, ids, time.Now(), chat, sender); err != nil {
+		return err
+	}
+	// The digest's only_unread filter treats the chat as read up to these
+	// messages (or now, when none of them is cached).
+	c.recordRead(ctx, chatJID, messageIDs, time.Now())
+	return nil
 }
 
 // MarkChatRead acks recent incoming messages in a chat so the phone stops
@@ -82,6 +88,7 @@ func (c *Client) MarkChatRead(ctx context.Context, chatJID string, limit int) (i
 		}
 		count += len(ids)
 	}
+	c.recordRead(ctx, chatJID, rawIDs, time.Time{})
 	return count, nil
 }
 
