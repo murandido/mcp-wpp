@@ -38,6 +38,10 @@ Commands:
   schedule     Have the daemon send a message at a later time (with serve -write)
   open-ui      Print a single-use browser login link (-page /pair, /access or /outbox)
   encrypt      Encrypt an existing plaintext store in place (daemon must be stopped)
+  backup       Write an encrypted archive of the store (-out FILE); safe while serve runs.
+               backup verify FILE checks one with the configured key
+  restore      Restore an archive (-in FILE, -force to replace data; daemon must be stopped)
+  rekey        Re-encrypt the store with a new key (-new-key-file F; daemon must be stopped)
   login        Pair without a daemon (pair falls back to this automatically)
   tools        List the MCP tools and their groups (-markdown for docs)
   healthcheck  Probe local daemon readiness (for container health checks)
@@ -71,10 +75,15 @@ serve flags:
   -webhook-chats LIST    Only these chats (JIDs or phone numbers)
   -webhook-keywords LIST Only messages containing one of these words
 
+  -alert-url URL         POST session alerts (down, logged out, recovered) here (env WPP_MCP_ALERT_URL)
+  -alert-after D         Alert after a paired session is unauthenticated this long (default 5m)
+  -alert-format F        json (default) or text (ntfy.sh)
+  -alert-header H        Extra "Name: value" header on alert requests (env WPP_MCP_ALERT_HEADER)
 Every HTTP route except /healthz and /readyz requires the operator bearer
 token that serve stores in <store>/token (or WPP_MCP_TOKEN). /mcp also
 accepts client tokens from ` + "`wpp-mcp token create`" + `, which is what remote
-connectors should use.
+connectors should use. GET /admin/metrics serves
+Prometheus metrics to the operator token.
 `
 
 func main() {
@@ -154,6 +163,12 @@ func main() {
 		code = runKeygen(rest)
 	case "encrypt":
 		code = runEncrypt(storeDir, redactor, rest)
+	case "backup":
+		code = runBackup(storeDir, rest)
+	case "restore":
+		code = runRestore(storeDir, rest)
+	case "rekey":
+		code = runRekey(storeDir, rest)
 	case "stdio":
 		code = runStdio(storeDir, rest)
 	case "open-ui":

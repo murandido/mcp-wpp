@@ -250,6 +250,116 @@ Generate the secret with `openssl rand -hex 32` (16 characters at least).
 - If the store already lives on an encrypted disk and you prefer no key file, use `-no-encryption` (`WPP_MCP_NO_ENCRYPTION=1`).
 - Files you export with `download_media`'s `output_path` are plaintext by design.
 
+## Operations
+
+### Backups
+
+`wpp-mcp backup -out FILE` writes a consistent snapshot of the store while `serve` keeps running. The databases are copied with SQLite's online backup API inside a single read transaction, so the copy is consistent and the daemon keeps writing during it. The archive is a plain tar with mode 0600:
+
+- `messages.db` and `whatsapp.db`, still SQLCipher-encrypted with your key;
+- the media cache, byte for byte (files stay sealed);
+- `manifest.json`: format version, creation time, wpp-mcp version, a key fingerprint, a schema summary and the SHA-256 of every file.
+
+Nothing is decrypted on the way, not even into temporary files. Two things are left out on purpose. **The key file** is not included: an archive that carried its key would protect nothing, so back the key up separately (a password manager works). Without it the backup cannot be read. **The token** is not included either: it is a credential, and `serve` makes a new one when it is missing. `uploads/` is not included because it holds your own outbound files.
+
+```bash
+wpp-mcp backup -out ~/backups/wpp-$(date +%F).tar
+wpp-mcp backup verify ~/backups/wpp-2026-11-15.tar   # checksums, key, database integrity, media authentication
+```
+
+With Docker, write the archive into the mounted data directory (run `mkdir -p data/backups` on the host first):
+
+```bash
+docker compose exec -T wpp-mcp wpp-mcp backup -out /data/backups/wpp-$(date +%F).tar
+```
+
+`-out -` streams the archive to stdout instead. Verification fails with a clear message if the configured key is not the one the backup was made with.
+
+To restore, stop the daemon. `restore` takes the store lock and refuses a store that already holds data unless you pass `-force`. It extracts and verifies the whole archive before it touches anything. With `-force`, the current files are moved to `<store>/.pre-restore` and deleted only once the restored store opens; if it does not, they are put back. The token and `uploads/` are kept.
+
+```bash
+wpp-mcp restore -in ~/backups/wpp-2026-11-15.tar            # into an empty store
+wpp-mcp restore -force -in ~/backups/wpp-2026-11-15.tar     # replace the current data
+
+docker compose stop wpp-mcp
+docker compose run --rm wpp-mcp restore -force -in /data/backups/wpp-2026-11-15.tar
+docker compose start wpp-mcp
+```
+
+A restored store needs the key it was backed up with. The WhatsApp session in `whatsapp.db` is restored too, so the device is still linked unless it was removed from the phone in the meantime.
+
+### Key rotation
+
+`wpp-mcp rekey -new-key-file NEW` re-encrypts both databases and every cached media file with sub-keys derived from a new master key, then checks that everything opens with it. Stop the daemon first: `rekey` takes the store lock.
+
+```bash
+wpp-mcp keygen -out ~/.config/wpp-mcp/key.new
+wpp-mcp rekey -new-key-file ~/.config/wpp-mcp/key.new
+mv ~/.config/wpp-mcp/key ~/.config/wpp-mcp/key.old && mv ~/.config/wpp-mcp/key.new ~/.config/wpp-mcp/key
+```
+
+With Docker:
+
+```bash
+(umask 077; docker run --rm ghcr.io/murandido/mcp-wpp:latest keygen -out - > secrets/wpp_mcp_key.new)
+docker compose stop wpp-mcp
+docker compose run --rm -v ./secrets/wpp_mcp_key.new:/run/secrets/wpp_mcp_key_new:ro wpp-mcp rekey -new-key-file /run/secrets/wpp_mcp_key_new
+mv secrets/wpp_mcp_key secrets/wpp_mcp_key.old && mv secrets/wpp_mcp_key.new secrets/wpp_mcp_key
+docker compose up -d
+```
+
+`rekey` writes complete new-key copies of everything first, and only then swaps them in, keeping the old files until the end. If it is interrupted, every file is still readable with the old key or the new one. `serve` refuses to start until you rerun the same `rekey` command, which finishes the job. Before the swap starts, `rekey -abort` drops the copies instead. Keep the old key: backups made before the rotation still need it.
+
+### Metrics
+
+`GET /admin/metrics` serves Prometheus text metrics. Like every `/admin/` route it needs the bearer token. No label holds a JID, name or number.
+
+| Metric | Meaning |
+|---|---|
+| `wpp_mcp_build_info{version}` | Running version |
+| `wpp_mcp_uptime_seconds`, `wpp_mcp_start_time_seconds` | Process uptime |
+| `wpp_mcp_whatsapp_paired`, `_connected`, `_authenticated` | Device linked, websocket up, session accepted by WhatsApp (0/1) |
+| `wpp_mcp_whatsapp_connection_state{state}` | Last connection event, one-hot |
+| `wpp_mcp_messages_received_total`, `wpp_mcp_messages_sent_total` | Live messages in and out since start |
+| `wpp_mcp_seconds_since_last_message_received` | Present once a message has arrived since start |
+| `wpp_mcp_tool_calls_total{tool,outcome}` | MCP tool executions, `ok` or `error` (calls refused by the access policy or held as proposals are not executions) |
+| `wpp_mcp_outbox_pending`, `wpp_mcp_access_requests_pending` | Waiting for your decision |
+| `wpp_mcp_chats_cached`, `wpp_mcp_chats_visible` | Chats in the cache, and those the access policy shows |
+| `wpp_mcp_alerts_total{event,result}` | Session alert deliveries (with `-alert-url`) |
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: wpp-mcp
+    metrics_path: /admin/metrics
+    authorization:
+      credentials_file: /etc/prometheus/wpp-mcp-token   # a copy of <store>/token
+    static_configs:
+      - targets: ["127.0.0.1:8765"]
+```
+
+A scraper on another Docker network reaches the daemon under another hostname: add it with `-allowed-host`.
+
+### Session alerts
+
+With `-alert-url`, `serve` POSTs a short alert when a paired session has not been authenticated for longer than `-alert-after` (default 5m), when WhatsApp logs the device out, and when the session recovers after one of those. Brief reconnects stay silent. Delivery runs in the background and is retried with backoff (network errors, 429 and 5xx) for about a minute. Alerts never contain chat data, names or numbers.
+
+The default body is JSON:
+
+```json
+{"event":"session_down","since":"2026-11-15T09:12:00Z","message":"WhatsApp session has not been authenticated for 5m0s"}
+```
+
+`event` is `session_down`, `logged_out` or `session_up`, and `since` is when the outage began. For [ntfy.sh](https://ntfy.sh), use the plain-text format. The body is then the message, and `Title`, `Tags` and `Priority` headers make it a readable notification:
+
+```bash
+wpp-mcp serve -alert-url https://ntfy.sh/<your-secret-topic> -alert-format text
+# a protected topic or a self-hosted server:
+WPP_MCP_ALERT_HEADER="Authorization: Bearer tk_..." wpp-mcp serve -alert-url https://ntfy.example.com/wpp -alert-format text
+```
+
+Treat the alert URL and header as secrets; they are never logged. The Docker health check (`wpp-mcp healthcheck`, which probes `/readyz`) needs no change.
+
 ## Configuration
 
 Global flags go before the command: `wpp-mcp -store DIR serve -write`.
@@ -279,6 +389,10 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -webhook-include-text` | `WPP_MCP_WEBHOOK_INCLUDE_TEXT` | off | Include message text and captions: they leave the machine |
 | `serve -webhook-chats` | `WPP_MCP_WEBHOOK_CHATS` | all allowed | Comma-separated chat JIDs or phone numbers |
 | `serve -webhook-keywords` | `WPP_MCP_WEBHOOK_KEYWORDS` | | Comma-separated words; only matching messages |
+| `serve -alert-url` | `WPP_MCP_ALERT_URL` | | POST session alerts here (see [Session alerts](#session-alerts)) |
+| `serve -alert-after` | `WPP_MCP_ALERT_AFTER` | `5m` | How long a paired session may stay unauthenticated before alerting |
+| `serve -alert-format` | `WPP_MCP_ALERT_FORMAT` | `json` | `json`, or `text` for ntfy.sh |
+| `serve -alert-header` | `WPP_MCP_ALERT_HEADER` | | Extra `Name: value` header on alert requests, e.g. auth |
 | | `WPP_MCP_PAIR_PHONE` | | Print a pairing code at startup when unpaired |
 | | `WPP_MCP_MEDIA_ROOT` | `<store>/uploads` | Only directory `send_file` may read from and `output_path` may write to |
 | | `WPP_MCP_TRANSCRIBE_URL` | | OpenAI-compatible speech-to-text endpoint |

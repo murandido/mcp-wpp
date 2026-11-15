@@ -67,6 +67,7 @@ type Client struct {
 	labelsEnabled    bool
 	statusMu         sync.RWMutex
 	status           ConnectionStatus
+	stats            clientStats // metrics counters (stats.go)
 
 	// mediaRetries tracks media retry receipts awaiting the phone's answer
 	// (see mediaretry.go); mediaRetryTimeout overrides
@@ -435,7 +436,7 @@ func (c *Client) IsConnected() bool {
 // right after pairing or when the session was revoked, and then no messages
 // arrive; readiness checks must use this, not IsConnected.
 func (c *Client) IsAuthenticated() bool {
-	return c.wa.IsLoggedIn()
+	return c.wa != nil && c.wa.IsLoggedIn()
 }
 
 // AddLoggedOutHandler registers a callback that fires when whatsmeow emits

@@ -89,7 +89,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", auditErr)
 		return 2
 	}
+	monitoring := registerMonitoringFlags(fs)
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := monitoring.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
 	if *auditDays < 0 {
@@ -195,6 +200,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 
 	drv := newProductionDriver(c)
+	ops, err := monitoring.startOperations(ctx, c, st)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 1
+	}
 
 	// The daemon owns the pair cache, so build it first, then hand the cache
 	// to the MCP server (so pairing_status can surface the live QR), then
@@ -207,6 +217,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		AutoPairPhone: os.Getenv("WPP_MCP_PAIR_PHONE"),
 		Access:        st,
 		Tokens:        st,
+		AdminMount:    ops.mount,
 	}
 	var auditor mcpsrv.Auditor
 	if *auditDays > 0 {
@@ -241,6 +252,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	if labelsEnabled {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
+	mcpServer.ObserveToolCalls(ops.observeTool)
 	d.SetMCPMount(mcpServer.AttachHTTP)
 	if write {
 		// Per-chat send policies can ask for confirmation even when the

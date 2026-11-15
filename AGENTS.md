@@ -5,12 +5,15 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 ## Structure
 
 ```text
-cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, open-ui, tools, healthcheck, smoke
+cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
+internal/alert/      session alerts: state machine (down/logged out/up) and webhook notifier with retries
+internal/backup/     encrypted backup archives, verify, restore, key rotation (crash-safe, see rekey.go)
 internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features, read state and mentions
 internal/auth/       caller identity on the request context, client token format and hashing
 internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media, plaintext→encrypted migration
 internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
 internal/mcp/        mcp-go server: tool registrations, audit, scope and access middlewares, send policy and confirmation (outbox), scheduler, profiles, catalog
+internal/metrics/    Prometheus text exposition for GET /admin/metrics
 internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, audit log
 internal/webhook/    signed outgoing webhooks for live incoming messages: filters, bounded queue, coalescing, retries
 internal/transcribe/ OpenAI-compatible speech-to-text client
@@ -19,7 +22,7 @@ e2e/                 end-to-end tests against the real binary (build tag e2e)
 docs/                tools.md (generated), systemd/launchd units, Claude Code hook
 ```
 
-The store directory (`-store`, `WPP_MCP_STORE`) holds `messages.db`, `whatsapp.db` (session and Signal keys), `token`, `.lock`, the media cache (`<chat>/<hex(message id)>/<file>`) and `uploads/` (the media root).
+The store directory (`-store`, `WPP_MCP_STORE`) holds `messages.db`, `whatsapp.db` (session and Signal keys), `token`, `.lock`, the media cache (`<chat>/<hex(message id)>/<file>`) and `uploads/` (the media root). Maintenance commands use hidden entries there: `.rekey-state` (an unfinished key rotation; `serve` refuses to start while it exists), `.pre-restore` and `.restore-staging`.
 
 ## Security invariants
 
@@ -28,7 +31,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 1. **Every tool is classified three times**, and tests fail otherwise: read-only or not (`readOnlyToolAccess` in `internal/mcp/tools.go`), a group (`toolGroup` in `internal/mcp/profiles.go`), and an access scope (`toolAccessScope` in `internal/mcp/access.go`). Unclassified tools fail closed.
 2. **MCP reads go through `s.store(ctx)`**, the scoped store view. A new query that returns chat content must add `s.scopeClause(...)` in `internal/store` (`accessFilter` alone ignores a client token's chat set; pair it with `s.tokenFilter`). A tool that names a chat must declare its argument in `toolAccessScope`, so the middleware checks it. Resources bypass tool middleware, so they check `allowedChat` themselves.
 3. **Hidden and nonexistent chats must be indistinguishable**: same error text, no counts, no names. `request_chat_access` returns only an ID.
-4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
+4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The one exception is `internal/backup`, which copies sealed files verbatim and, in `rekey`, re-seals them in memory with `crypto.MediaCipher`; it never writes plaintext, not even to temporary files. Database copies use `crypto.SnapshotDatabase` (online backup API between two keyed connections). The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
 5. **Every HTTP route is authenticated** except `/healthz`, `/readyz` and `/ui/login`. `/mcp` and `/admin/*` take a bearer token only, never the browser cookie. State-changing pages need a CSRF token. The Host/Origin guard wraps everything.
 6. **Writes need consent**: with `-write`, a tool that sends or changes the account follows the target chat's send policy (`chat_send_policy`, `internal/mcp/sendpolicy.go`): `none` refuses it, `confirm` creates an outbox proposal (`internal/mcp/outbox.go`), `direct` acts. Chats without a policy use the default from `-confirm-sends`; tools that target no chat always use the default. The send policy is resolved from the `toolAccessScope` argument after the access check, so it never widens visibility and a hidden chat still gets "chat not found". Only trivial self-visible actions are in `noConfirm`, and `none` still refuses them. Approval re-runs the access middleware and the send policy.
 7. **Pairing never goes through MCP.** `pairing_status` must not return QR payloads or codes.
@@ -37,6 +40,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 10. **Everything is audited, nothing is quoted.** `auditMiddleware` (outermost) records every tool call and the resource middleware every read: actor, tool, the chat from `toolAccessScope`, outcome (`ok`, `error`, `denied`, `proposed`, set with `markAudit`) and duration. `daemon.auditAdmin` records state-changing operator requests with a whitelist of fields. Never add message text, other arguments, results or secrets to an audit entry.
 11. **Scheduled messages are writes too.** `schedule_message` follows the send policy when it is created; the scheduler (`RunScheduler`, `-write` only) re-checks access and the send policy at send time, sends through the rate-limited send path, and claims each item atomically (`ClaimScheduled`) so nothing is sent twice. Operator schedules (`wpp-mcp schedule`) need no approval but still require a visible chat.
 12. **Webhooks only report allowed chats.** `internal/webhook` re-checks `ChatAllowed` when each batch is sent, never sends history sync or the account's own messages, leaves text out unless `-webhook-include-text`, never sends media bytes, and never logs the URL or secret (only the host).
+13. **Operational output carries no personal data.** Metric labels take values from fixed sets (tool names, outcomes, states); alert payloads hold an event kind, a time and a fixed message. Backup archives exclude the key file and the token.
 
 ## Build and test
 

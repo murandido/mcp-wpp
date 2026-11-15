@@ -29,6 +29,9 @@ func loadKeys() (*crypto.Keys, error) {
 
 // openStore loads the keys and opens the message store with them.
 func openStore(storeDir string) (*store.Store, *crypto.Keys, error) {
+	if err := checkNoPendingRekey(storeDir); err != nil {
+		return nil, nil, err
+	}
 	keys, err := loadKeys()
 	if err != nil {
 		return nil, nil, err

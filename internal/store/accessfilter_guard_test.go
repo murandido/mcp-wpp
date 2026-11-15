@@ -13,10 +13,11 @@ import (
 // allowlist only for call sites that do not serve MCP reads.
 func TestAccessFilterAlwaysPairedWithTokenFilter(t *testing.T) {
 	allowed := []string{
-		"func accessFilter(",                     // the definition
-		`"SELECT "+accessFilter("?")`,            // ChatAllowed: checks tokenAllows first
-		`accessFilter("c.jid")+`,                 // ListAccess: the operator's own view
-		`accessFilter(col) + s.tokenFilter(col)`, // scopeClause
+		"func accessFilter(",                          // the definition
+		`"SELECT "+accessFilter("?")`,                 // ChatAllowed: checks tokenAllows first
+		`accessFilter("c.jid")+`,                      // ListAccess: the operator's own view
+		`accessFilter(col) + s.tokenFilter(col)`,      // scopeClause
+		`WHERE ` + "`+accessFilter(\"jid\")+`" + `),`, // stats.go: operator-only chats_visible metric
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
