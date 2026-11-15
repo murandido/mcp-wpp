@@ -8,16 +8,7 @@ import (
 	"time"
 )
 
-func openFileStore(t *testing.T) *Store {
-	t.Helper()
-	dir := t.TempDir()
-	s, err := Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s
-}
+// openFileStore is defined in tokens_test.go.
 
 func TestSendPolicy_SetGetReset(t *testing.T) {
 	s := openFileStore(t)

@@ -55,6 +55,7 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 		if ref != "" && !s.allowedChat(ctx, ref) {
 			// The access middleware has already refused this; repeat it so
 			// the send policy of a hidden chat can never leak.
+			markAudit(ctx, auditDenied)
 			return chatNotFound(ref), nil
 		}
 		policy, err := s.sendPolicyFor(ctx, ref)
@@ -63,6 +64,7 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 		}
 		switch {
 		case policy == store.SendNone:
+			markAudit(ctx, auditDenied)
 			return mcp.NewToolResultError(sendRefusedText(ref)), nil
 		case selfConfirming[name]:
 			return next(withSendPolicy(ctx, policy), req)
