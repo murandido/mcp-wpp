@@ -51,3 +51,26 @@ func (s *Store) ResolveJIDToPhone(jid string) string {
 	}
 	return ""
 }
+
+// contactJIDs returns every JID whatsmeow may file a person's contact row
+// under: the phone-number JID and, when known, its LID. Newer accounts sync
+// many contacts keyed by LID only, so looking up just one form misses names.
+func (s *Store) contactJIDs(jid string) []string {
+	if jid == "" || s.whatsmeowDB == nil {
+		return []string{jid}
+	}
+	if strings.HasSuffix(jid, "@lid") {
+		if pn := s.ResolveLIDToJID(jid); pn != jid {
+			return []string{pn, jid}
+		}
+		return []string{jid}
+	}
+	if !strings.HasSuffix(jid, "@s.whatsapp.net") {
+		return []string{jid}
+	}
+	var lid string
+	if err := s.whatsmeowDB.QueryRow("SELECT lid FROM whatsmeow_lid_map WHERE pn = ?", jidUser(jid)).Scan(&lid); err == nil && lid != "" {
+		return []string{jid, lid + "@lid"}
+	}
+	return []string{jid}
+}
