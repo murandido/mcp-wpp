@@ -229,3 +229,18 @@ func TestListen_UnixSocketIsPrivate(t *testing.T) {
 		t.Fatalf("socket mode %04o, want 0600", fi.Mode().Perm())
 	}
 }
+
+// Post-login redirects are rebuilt from a parsed same-origin page path; any
+// form a browser could read as another host is refused.
+func TestLandingPath(t *testing.T) {
+	for _, bad := range []string{"", "pair", "//evil.example", `/\evil.example`, `/\/evil.example`, "https://evil.example/pair", "/mcp", "/admin/x", "/pair\\x"} {
+		if got, ok := landingPath(bad); ok {
+			t.Errorf("landingPath(%q) accepted as %q", bad, got)
+		}
+	}
+	for in, want := range map[string]string{"/pair": "/pair", "/access?q=ana": "/access", "/outbox": "/outbox"} {
+		if got, ok := landingPath(in); !ok || got != want {
+			t.Errorf("landingPath(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+}

@@ -288,25 +288,38 @@ func (a *uiAuth) mount(mux *http.ServeMux) {
 			Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
 			MaxAge:   int(sessionTTL.Seconds()),
 		})
-		next := r.URL.Query().Get("next")
-		if !safeLanding(next) {
+		next, ok := landingPath(r.URL.Query().Get("next"))
+		if !ok {
 			next = defaultUILandIn
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, next, http.StatusSeeOther) //nolint:gosec // G710: next passed safeLanding, so it is a local page path
+		http.Redirect(w, r, next, http.StatusSeeOther) // next is a constant from landingPages
 	})
 }
 
 // safeLanding accepts only local page paths, never another origin.
 func safeLanding(p string) bool {
-	if p == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.Contains(p, `\`) {
-		return false
+	_, ok := landingPath(p)
+	return ok
+}
+
+// landingPages are the only post-login destinations. The redirect target
+// is always one of these constants, never text taken from the request.
+var landingPages = map[string]string{
+	"/pair":   "/pair",
+	"/access": "/access",
+	"/outbox": "/outbox",
+}
+
+// landingPath maps a requested post-login destination to one of
+// landingPages. Anything else, including other origins, other paths and
+// query strings, is refused.
+func landingPath(p string) (string, bool) {
+	u, err := url.Parse(p)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" {
+		return "", false
 	}
-	switch classify(strings.SplitN(p, "?", 2)[0]) {
-	case classBrowser:
-		return true
-	default:
-		return false
-	}
+	target, ok := landingPages[u.Path]
+	return target, ok
 }

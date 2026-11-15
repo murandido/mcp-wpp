@@ -40,10 +40,12 @@ func ResolveToken(envToken, path string, create bool) (string, error) {
 		return "", fmt.Errorf("create token file: %w", err)
 	}
 	if _, err := f.WriteString(tok + "\n"); err != nil {
-		f.Close()
+		_ = f.Close() // the write error is what matters; the file is removed
+		_ = os.Remove(path)
 		return "", fmt.Errorf("write token file: %w", err)
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
 		return "", fmt.Errorf("write token file: %w", err)
 	}
 	return tok, nil
