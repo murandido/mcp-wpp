@@ -69,7 +69,7 @@ func TestCIMD_Validation(t *testing.T) {
 		w.WriteHeader(http.StatusFound)
 	}
 
-	if doc, err := fetchCIMD(ctx, c.trust, c.url("/good")); err != nil || doc.Name != "Claude" {
+	if doc, err := fetchCIMD(ctx, c.trust, c.url("/good"), c.url("/good")); err != nil || doc.Name != "Claude" {
 		t.Fatalf("good document: %+v %v", doc, err)
 	}
 	for path, want := range map[string]string{
@@ -82,7 +82,7 @@ func TestCIMD_Validation(t *testing.T) {
 		"/missing":      "status 404",
 	} {
 		before := c.hits.Load()
-		_, err := fetchCIMD(ctx, c.trust, c.url(path))
+		_, err := fetchCIMD(ctx, c.trust, c.url(path), c.url(path))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v, want %q", path, err, want)
 		}
@@ -106,6 +106,26 @@ func TestCIMD_URLRules(t *testing.T) {
 	}
 }
 
+// Documents are fetched only from Anthropic's origins, rebuilt on a constant
+// base; any other host is refused before a request is made.
+func TestCIMD_FetchOnlyAnthropicOrigins(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://claude.ai/oauth/mcp-oauth-client-metadata": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+		"https://CLAUDE.com/a/b":                            "https://claude.com/a/b",
+	} {
+		u, _ := url.Parse(in)
+		if got, ok := cimdFetchURL(u); !ok || got != want {
+			t.Errorf("cimdFetchURL(%q) = %q, %v", in, got, ok)
+		}
+	}
+	for _, bad := range []string{"https://evil.test/doc", "https://claude.ai.evil.test/doc", "https://claude.ai:8443/doc", "https://127.0.0.1/doc"} {
+		u, _ := url.Parse(bad)
+		if got, ok := cimdFetchURL(u); ok {
+			t.Errorf("cimdFetchURL(%q) accepted as %q", bad, got)
+		}
+	}
+}
+
 // The production fetch client refuses loopback (and every other non-public
 // address) at dial time.
 func TestCIMD_PrivateAddressRefusedAtDial(t *testing.T) {
@@ -113,14 +133,14 @@ func TestCIMD_PrivateAddressRefusedAtDial(t *testing.T) {
 	c.docs["/good"] = writeDoc(map[string]any{"client_name": "Claude", "redirect_uris": []string{DefaultRedirectURI}})
 	pool := c.ts.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
 	guarded := newFetchClient(dialGuard, pool)
-	_, err := fetchCIMD(context.Background(), guarded, c.url("/good"))
+	_, err := fetchCIMD(context.Background(), guarded, c.url("/good"), c.url("/good"))
 	if err == nil || !strings.Contains(err.Error(), "non-public address") {
 		t.Fatalf("loopback fetch: %v", err)
 	}
 	// A hostname is resolved first; the guard sees the address dialled.
 	u, _ := url.Parse(c.url("/good"))
 	byName := "https://localhost:" + u.Port() + "/good"
-	if _, err := fetchCIMD(context.Background(), guarded, byName); err == nil || !strings.Contains(err.Error(), "non-public address") {
+	if _, err := fetchCIMD(context.Background(), guarded, byName, byName); err == nil || !strings.Contains(err.Error(), "non-public address") {
 		t.Fatalf("localhost fetch: %v", err)
 	}
 	if c.hits.Load() != 0 {
@@ -156,11 +176,29 @@ func TestDialGuard(t *testing.T) {
 // cached, and its redirect must also be in the allowlist.
 func TestCIMD_Authorize(t *testing.T) {
 	c := newCIMDServer(t)
-	c.docs["/client"] = writeDoc(map[string]any{"client_name": "Claude", "redirect_uris": []string{DefaultRedirectURI, "https://evil.test/cb"}})
-	c.docs["/foreign"] = writeDoc(map[string]any{"client_name": "Evil", "redirect_uris": []string{"https://evil.test/cb"}})
-	f := newFixture(t, func(cfg *Config) { cfg.HTTPClient = c.trust })
+	const anthropic = "https://claude.ai"
+	c.docs["/client"] = writeDoc(map[string]any{"client_id": anthropic + "/client", "client_name": "Claude", "redirect_uris": []string{DefaultRedirectURI, "https://evil.test/cb"}})
+	c.docs["/foreign"] = writeDoc(map[string]any{"client_id": anthropic + "/foreign", "client_name": "Evil", "redirect_uris": []string{"https://evil.test/cb"}})
+	// Requests for claude.ai are served by the test server.
+	target, _ := url.Parse(c.ts.URL)
+	inner := c.trust.Transport
+	routed := &http.Client{CheckRedirect: c.trust.CheckRedirect, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "claude.ai" {
+			t.Errorf("fetched a non-Anthropic host: %s", r.URL.Host)
+		}
+		r = r.Clone(r.Context())
+		r.URL.Scheme, r.URL.Host = target.Scheme, target.Host
+		return inner.RoundTrip(r)
+	})}
+	f := newFixture(t, func(cfg *Config) { cfg.HTTPClient = routed })
 
-	p := authParams(c.url("/client"))
+	// A metadata document on any other host is refused without a request.
+	resp, _ := f.get(PathAuthorize + "?" + authParams(c.url("/client")).Encode())
+	if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" || c.hits.Load() != 0 {
+		t.Fatalf("foreign metadata host: %d %q hits=%d", resp.StatusCode, resp.Header.Get("Location"), c.hits.Load())
+	}
+
+	p := authParams(anthropic + "/client")
 	code, _ := f.startAuthorize(p)
 	if pend := f.srv.Pending(); len(pend) != 1 || pend[0].Code != code || pend[0].ClientName != "Claude" || pend[0].ClientKind != "cimd" {
 		t.Fatalf("pending: %+v", pend)
@@ -171,19 +209,23 @@ func TestCIMD_Authorize(t *testing.T) {
 	}
 	// In the document but not in the allowlist: an error page, no redirect.
 	p.Set("redirect_uri", "https://evil.test/cb")
-	resp, _ := f.get(PathAuthorize + "?" + p.Encode())
+	resp, _ = f.get(PathAuthorize + "?" + p.Encode())
 	if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" {
 		t.Fatalf("foreign redirect: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	// In the allowlist but not in the document: the same.
-	p = authParams(c.url("/foreign"))
+	p = authParams(anthropic + "/foreign")
 	resp, _ = f.get(PathAuthorize + "?" + p.Encode())
 	if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" {
 		t.Fatalf("redirect not in document: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	// A bad document is an error page too.
-	resp, _ = f.get(PathAuthorize + "?" + authParams(c.url("/missing")).Encode())
+	resp, _ = f.get(PathAuthorize + "?" + authParams(anthropic+"/missing").Encode())
 	if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Location") != "" {
 		t.Fatalf("missing document: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

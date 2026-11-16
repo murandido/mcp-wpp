@@ -96,14 +96,19 @@ func (s *Server) resolveClient(ctx context.Context, id string) (client, error) {
 }
 
 func (s *Server) resolveCIMD(ctx context.Context, id string) (client, error) {
-	if _, err := validCIMDURL(id); err != nil {
+	u, err := validCIMDURL(id)
+	if err != nil {
 		return client{}, err
+	}
+	fetchURL, ok := cimdFetchURL(u)
+	if !ok {
+		return client{}, errClient{"client metadata documents are accepted only from Anthropic (claude.ai); other clients can register with dynamic client registration"}
 	}
 	now := s.now()
 	if c, err := s.st.GetOAuthClient(ctx, id); err == nil && c.Kind == store.OAuthClientCIMD && c.FetchedAt != nil && now.Sub(*c.FetchedAt) < cimdCacheTTL {
 		return client{ID: c.ClientID, Name: c.ClientName, Kind: c.Kind, RedirectURIs: c.RedirectURIs}, nil
 	}
-	doc, err := fetchCIMD(ctx, s.fetch, id)
+	doc, err := fetchCIMD(ctx, s.fetch, fetchURL, id)
 	if err != nil {
 		s.logf("oauth: client metadata document refused: %v", err)
 		return client{}, errClient{"the client's metadata document could not be used"}
@@ -125,19 +130,34 @@ type cimdDoc struct {
 	Name                    string   `json:"-"`
 }
 
-// fetchCIMD downloads and validates a Client ID Metadata Document. c must
-// not follow redirects (NewFetchClient does not).
-func fetchCIMD(ctx context.Context, c *http.Client, id string) (cimdDoc, error) {
+// cimdFetchURL rebuilds the document URL on a constant, trusted origin. Only
+// Anthropic's origins are fetched: the server never makes requests to hosts
+// a caller chooses. The path comes from the validated client_id.
+func cimdFetchURL(u *url.URL) (string, bool) {
+	path := strings.TrimPrefix(u.EscapedPath(), "/")
+	switch strings.ToLower(u.Host) {
+	case "claude.ai":
+		return "https://claude.ai/" + path, true
+	case "claude.com":
+		return "https://claude.com/" + path, true
+	}
+	return "", false
+}
+
+// fetchCIMD downloads fetchURL and validates it as the Client ID Metadata
+// Document for id. c must not follow redirects (NewFetchClient does not).
+func fetchCIMD(ctx context.Context, c *http.Client, fetchURL, id string) (cimdDoc, error) {
 	ctx, cancel := context.WithTimeout(ctx, cimdTimeout)
 	defer cancel()
-	// The URL passed validCIMDURL; c is NewFetchClient, which refuses
-	// non-public addresses at dial time and follows no redirects.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, id, nil) //nolint:gosec // G704: see above; fetching the client's URL is the CIMD protocol
+	// fetchURL is built by cimdFetchURL on a constant origin; c is
+	// NewFetchClient, which also refuses non-public addresses at dial time
+	// and follows no redirects.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil) //nolint:gosec // G704: the origin is a constant chosen by cimdFetchURL; only the path comes from the client_id
 	if err != nil {
 		return cimdDoc{}, err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.Do(req) //nolint:gosec // G704: guarded client, see above
+	resp, err := c.Do(req) //nolint:gosec // G704: constant origin (cimdFetchURL) and the guarded fetch client
 	if err != nil {
 		return cimdDoc{}, fmt.Errorf("fetch: %w", err)
 	}
