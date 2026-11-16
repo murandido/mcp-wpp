@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/murandido/mcp-wpp/internal/store"
 )
 
 func TestParseScheduleTime(t *testing.T) {
@@ -61,5 +64,35 @@ func TestScheduleLocation(t *testing.T) {
 	}
 	if _, err := scheduleLocation("Not/AZone", env("")); err == nil {
 		t.Fatal("a bad -tz must fail")
+	}
+}
+
+func TestScheduleInStore(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	const alice, bob = "447700000001@s.whatsapp.net", "447700000002@s.whatsapp.net"
+	_ = st.StoreChat(alice, "Alice", time.Now())
+	_ = st.StoreChat(bob, "Bob", time.Now())
+	_ = st.SetChatAccess(ctx, alice, store.AccessAllowed, "")
+	now := time.Now()
+	at := now.Add(time.Hour)
+	if _, err := scheduleInStore(ctx, st, "447700000099@s.whatsapp.net", "x", at, now); err == nil || !strings.Contains(err.Error(), "no cached chat") {
+		t.Fatalf("unknown chat: %v", err)
+	}
+	if _, err := scheduleInStore(ctx, st, bob, "x", at, now); err == nil || !strings.Contains(err.Error(), "hidden") {
+		t.Fatalf("hidden chat: %v", err)
+	}
+	_ = st.SetChatSendPolicy(ctx, alice, store.SendNone)
+	if _, err := scheduleInStore(ctx, st, alice, "x", at, now); err == nil || !strings.Contains(err.Error(), "none") {
+		t.Fatalf("policy none: %v", err)
+	}
+	_ = st.SetChatSendPolicy(ctx, alice, "reset")
+	p, err := scheduleInStore(ctx, st, alice, "bom dia", at, now)
+	if err != nil || p.Status != store.OutboxScheduled || p.CreatedBy != store.CreatorOperatorCLI || !strings.Contains(p.Summary, "Alice") {
+		t.Fatalf("queued: %+v %v", p, err)
 	}
 }
