@@ -100,7 +100,7 @@ wpp-mcp token revoke claude-ai                      # refused from the next requ
 
 The token (`wppmcp_` and 64 hex characters) is printed once and only its SHA-256 is stored. Client tokens work on `/mcp` only. `-chats` narrows what the token sees to those chats, and only when the access policy allows them as well; other chats look nonexistent to it. A `read` token gets an error from every tool that sends or changes the account. With `send`, writes still go through `-write`, the outbox approval and the access policy. Unknown, revoked and expired tokens all get the same 401. The operator token keeps full access. It is the only one accepted on `/admin/*` and for browser login, and the local CLI and `wpp-mcp stdio` use it.
 
-`wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`.
+`wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`. Operator changes made without a running daemon (`wpp-mcp access`, `token`, `oauth revoke`, `login`, which then edit the store directly) are recorded too, with the actor `operator:cli` and the same action and fields the admin API would record.
 
 ### Connect with OAuth
 
