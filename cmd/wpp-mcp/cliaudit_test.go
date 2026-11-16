@@ -109,6 +109,11 @@ func TestCLIAudit_MatchesDaemon(t *testing.T) {
 		{"decide", func() error { return api.decide(ctx, reqID(viaAPI), true, []string{cliTestJID}) },
 			func() error { return direct.decide(ctx, reqID(offline), true, []string{cliTestJID}) },
 			routeAccessDecide, "id=1 approve=true"},
+		{"notes revert", func() error { seedNotes(t, viaAPI); _, err := api.revertNotes(ctx, cliTestJID, 1); return err },
+			func() error { seedNotes(t, offline); _, err := direct.revertNotes(ctx, cliTestJID, 1); return err },
+			routeNotesRevert, "version=1"},
+		{"notes clear", func() error { return api.clearNotes(ctx, cliTestJID) }, func() error { return direct.clearNotes(ctx, cliTestJID) },
+			routeNotesClear, ""},
 		{"token create", func() error { _, _, err := apiAdmin.createToken(ctx, newTok); return err },
 			func() error { _, _, err := directAdm.createToken(ctx, newTok); return err },
 			routeClientCreate, "chats=" + cliTestJID + " expires_at=2030-01-02T03:04:05Z name=laptop scopes=read"},
@@ -172,4 +177,15 @@ func randomTestToken(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return hex.EncodeToString(b)
+}
+
+// seedNotes gives cliTestJID two versions of notes.
+func seedNotes(t *testing.T, st *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+	for v, text := range []string{"first", "second"} {
+		if _, err := st.UpdateChatNotes(ctx, cliTestJID, text, "", v); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

@@ -31,7 +31,7 @@ Each MCP tool call and resource read records the actor, the tool, the chat
 it targeted, the outcome (ok, error, denied, proposed) and its duration;
 never arguments, message text or results. Operator actions on the admin API
 and pages are recorded too, and so are the same changes made by access,
-schedule, token, oauth revoke and login without a running daemon (actor operator:cli,
+schedule, notes, token, oauth revoke and login without a running daemon (actor operator:cli,
 the same action and fields). Entries older than serve's -audit-days (default
 90) are deleted. Works with or without a running daemon.
 `
