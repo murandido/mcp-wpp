@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/murandido/mcp-wpp/internal/security"
 )
@@ -81,5 +82,17 @@ func TestDialableAddr(t *testing.T) {
 		if got := dialableAddr(in); got != want {
 			t.Errorf("dialableAddr(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestLoadTimezone(t *testing.T) {
+	if loc, err := loadTimezone(""); err != nil || loc != time.Local {
+		t.Fatalf("default: %v %v", loc, err)
+	}
+	if loc, err := loadTimezone("America/Sao_Paulo"); err != nil || loc.String() != "America/Sao_Paulo" {
+		t.Fatalf("IANA name: %v %v", loc, err)
+	}
+	if _, err := loadTimezone("Mars/Olympus"); err == nil {
+		t.Fatal("unknown zone accepted")
 	}
 }

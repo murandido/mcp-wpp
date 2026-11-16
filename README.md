@@ -213,7 +213,19 @@ wpp-mcp access send 123456789@g.us none
 wpp-mcp access send "Ana" reset        # back to the daemon's default
 ```
 
-`wpp-mcp access list` shows the policy in its `SEND` column, and the `/access` page has a control per chat. Chats without a policy use the daemon's default: `confirm`, or `direct` with `-confirm-sends=false`. Tools that target no chat (privacy settings, `create_group`, status message) always use the default. A send policy never makes a hidden chat visible: a write to a hidden chat still answers "chat not found". Without `-write` no write tool is exposed, whatever the policies say.
+### Send windows
+
+A chat can also have hours when the AI may write to it, read in the daemon's time zone (`serve -timezone`, default the system zone). A window may wrap midnight:
+
+```bash
+wpp-mcp access window "Ana" 08:00-22:00
+wpp-mcp access window 123456789@g.us 22:00-06:00
+wpp-mcp access window "Ana" off
+```
+
+Outside the window, a message the AI sends (text, file, audio, reply, poll, contact card) is not sent but deferred to the next opening, still under the chat's send policy: `confirm` makes a proposal with that send time (approvable for at least 15 minutes even if the window opens sooner), `direct` schedules it at once, and `none` refuses it as usual. `schedule_message` moves a send time outside the window to its next opening. Every other write aimed at the chat (reactions, edits, deletions, read receipts, typing, group changes) is refused with the time the window opens. The tool result says the message was deferred and until when. The window is checked after the access check and the send policy, so a hidden chat still answers "chat not found". When a scheduled item comes due outside its chat's window (the window changed meanwhile), the scheduler moves it to the next opening instead of sending it. Your own `wpp-mcp schedule` ignores windows, and approving an immediate proposal sends it at once whatever the hour: both are your decision, not the AI's. The next opening is computed minute by minute on the real clock, so daylight-saving changes neither skip nor repeat an opening.
+
+`wpp-mcp access list` shows the policy in its `SEND` column and the window in its `WINDOW` column, and the `/access` page has a control per chat. Chats without a policy use the daemon's default: `confirm`, or `direct` with `-confirm-sends=false`. Tools that target no chat (privacy settings, `create_group`, status message) always use the default. A send policy never makes a hidden chat visible: a write to a hidden chat still answers "chat not found". Without `-write` no write tool is exposed, whatever the policies say.
 
 ### Scheduled messages
 
@@ -435,6 +447,7 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
+| `serve -timezone` | `WPP_MCP_TIMEZONE` | system zone | IANA time zone that per-chat send windows are read in (`wpp-mcp access window`) |
 | `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, the default send policy for chats without one: `confirm` (on) or `direct` (off); see `wpp-mcp access send` |
 | `serve -tools` | `WPP_MCP_TOOLS` | `default` | Groups or tool names: `core`, `access`, `messaging`, `transcribe`, `labels`, `contacts`, `groups`, `privacy`, `polls`, `all` |
 | `serve -disable-tools` | `WPP_MCP_DISABLE_TOOLS` | | Groups or tool names to hide |

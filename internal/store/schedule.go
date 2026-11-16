@@ -111,6 +111,40 @@ func (s *Store) CreateScheduledProposal(ctx context.Context, tool, argsJSON, sum
 	return s.insertScheduled(ctx, OutboxPending, tool, argsJSON, summary, sendAt, now)
 }
 
+// CreateDeferredProposal records a proposal deferred to sendAt (the next
+// opening of the chat's send window). Unlike a scheduled proposal it stays
+// approvable for at least ProposalTTL even when the window opens sooner;
+// approved late, it is sent at the scheduler's next run (within
+// MaxSendDelay, and only inside the window).
+func (s *Store) CreateDeferredProposal(ctx context.Context, tool, argsJSON, summary string, sendAt, now time.Time) (*Proposal, error) {
+	p, err := s.CreateScheduledProposal(ctx, tool, argsJSON, summary, sendAt, now)
+	if err != nil {
+		return nil, err
+	}
+	if floor := now.UTC().Add(ProposalTTL); p.ExpiresAt.Before(floor) {
+		if _, err := s.db.ExecContext(ctx, "UPDATE outbox SET expires_at = ? WHERE id = ?", floor, p.ID); err != nil {
+			return nil, err
+		}
+		p.ExpiresAt = floor
+	}
+	return p, nil
+}
+
+// RescheduleScheduled moves a scheduled item to sendAt (its chat's send
+// window changed). It returns ErrProposalNotPending when the item is no
+// longer scheduled.
+func (s *Store) RescheduleScheduled(ctx context.Context, id int64, sendAt time.Time) error {
+	sendAt = sendAt.UTC().Truncate(time.Second)
+	res, err := s.db.ExecContext(ctx, "UPDATE outbox SET send_at = ?, expires_at = ? WHERE id = ? AND status = 'scheduled'", sendAt, sendAt, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrProposalNotPending
+	}
+	return nil
+}
+
 // ScheduleMessage records a message the scheduler sends at sendAt, without
 // asking for approval (send policy direct, or an operator action).
 func (s *Store) ScheduleMessage(ctx context.Context, tool, argsJSON, summary string, sendAt, now time.Time) (*Proposal, error) {

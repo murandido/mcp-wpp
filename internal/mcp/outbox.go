@@ -62,10 +62,16 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 		if err != nil {
 			return mcp.NewToolResultError("cannot read the send policy: " + err.Error()), nil
 		}
-		switch {
-		case policy == store.SendNone:
+		if policy == store.SendNone {
 			markAudit(ctx, auditDenied)
 			return mcp.NewToolResultError(sendRefusedText(ref)), nil
+		}
+		// The send window comes after the access check and the policy, so
+		// it never reveals anything about a hidden chat.
+		if res := s.applySendWindow(ctx, name, ref, args, policy); res != nil {
+			return res, nil
+		}
+		switch {
 		case selfConfirming[name]:
 			return next(withSendPolicy(ctx, policy), req)
 		case policy == store.SendDirect || !needsConfirmation(name):
@@ -167,17 +173,22 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 		s.wakeScheduler()
 		return *p, nil
 	}
-	tool := s.mcp.GetTool(p.Tool)
+	return finish(s.execute(ctx, p.Tool, args))
+}
+
+// execute runs an approved or deferred call through the access middleware,
+// exactly as a direct call, and reports whether it failed and its text.
+func (s *Server) execute(ctx context.Context, name string, args map[string]any) (failed bool, text string) {
+	tool := s.mcp.GetTool(name)
 	if tool == nil {
-		return finish(true, fmt.Sprintf("tool %s is not enabled on this daemon", p.Tool))
+		return true, fmt.Sprintf("tool %s is not enabled on this daemon", name)
 	}
 	req := mcp.CallToolRequest{}
-	req.Params.Name = p.Tool
+	req.Params.Name = name
 	req.Params.Arguments = args
-	// Run through the access middleware as well, exactly as a direct call.
 	res, err := s.accessMiddleware(tool.Handler)(context.WithValue(ctx, executingKey{}, true), req)
 	if err != nil {
-		return finish(true, err.Error())
+		return true, err.Error()
 	}
 	var texts []string
 	for _, c := range res.Content {
@@ -185,8 +196,8 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 			texts = append(texts, t.Text)
 		}
 	}
-	text := strings.Join(texts, "\n")
-	return finish(res.IsError || reportsFailure(text), text)
+	text = strings.Join(texts, "\n")
+	return res.IsError || reportsFailure(text), text
 }
 
 // creatorBlocked refuses an item whose creating client token has been
