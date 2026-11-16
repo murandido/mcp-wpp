@@ -52,6 +52,10 @@ func openTestStore(t *testing.T) *Store {
 		db.Close()
 		t.Fatalf("digest schema: %v", err)
 	}
+	if _, err := db.Exec(chatNotesSchema); err != nil {
+		db.Close()
+		t.Fatalf("chat notes schema: %v", err)
+	}
 
 	// A second handle to the same shared-cache DB, playing the role of
 	// whatsmeowDB. LID lookups hit the same underlying tables.

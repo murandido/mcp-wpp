@@ -265,7 +265,7 @@ func TestParsePublicURLAndResource(t *testing.T) {
 			t.Errorf("ParsePublicURL(%q) = %q, %v", in, got, err)
 		}
 	}
-	for _, bad := range []string{"", "http://wpp.example.com", "https://wpp.example.com/mcp", "https://u@wpp.example.com", "https://wpp.example.com?x=1", "wpp.example.com"} {
+	for _, bad := range []string{"", "http://wpp.example.com", "https://wpp.example.com/mcp", "https://u@wpp.example.com", "https://wpp.example.com?x=1", "wpp.example.com", "HTTPS://:443", "https://:8443"} {
 		if _, err := ParsePublicURL(bad); err == nil {
 			t.Errorf("ParsePublicURL(%q) accepted", bad)
 		}

@@ -25,6 +25,7 @@ var expectedToolNames = []string{
 	"get_blocklist",
 	"get_chat",
 	"get_chat_labels",
+	"get_chat_notes",
 	"get_group_info",
 	"get_group_invite_link",
 	"get_message_context",
@@ -66,6 +67,7 @@ var expectedToolNames = []string{
 	"set_status_message",
 	"transcribe_audio",
 	"unblock_contact",
+	"update_chat_notes",
 	"update_group_participants",
 }
 
@@ -132,7 +134,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 52
+	const want = 54
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -145,8 +147,8 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 48 {
-		t.Fatalf("default tool count = %d, want 48", got)
+	if got := len(s.MCP().ListTools()); got != 50 {
+		t.Fatalf("default tool count = %d, want 50", got)
 	}
 }
 
@@ -172,6 +174,7 @@ func TestToolsByDomain(t *testing.T) {
 		"tools_labels.go":     {"list_labels"},
 		"tools_privacy.go":    {"get_blocklist", "send_presence"},
 		"tools_transcribe.go": {"transcribe_audio", "extract_image_text"},
+		"tools_notes.go":      {"get_chat_notes", "update_chat_notes"},
 	}
 
 	for file, names := range domains {
@@ -190,6 +193,7 @@ var expectedReadOnlyTools = map[string]bool{
 	"get_blocklist":        true,
 	"get_chat":             true,
 	"get_chat_labels":      true,
+	"get_chat_notes":       true,
 	"get_group_info":       true,
 	"get_message_context":  true,
 	"get_poll_results":     true,
@@ -207,6 +211,7 @@ var expectedReadOnlyTools = map[string]bool{
 	"request_sync":         true,
 	"resync_labels":        true,
 	"search_contacts":      true,
+	"update_chat_notes":    true,
 }
 
 func TestReadOnlyServer_RejectsMutationTools(t *testing.T) {

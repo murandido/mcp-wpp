@@ -176,6 +176,10 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec(chatNotesSchema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply chat notes schema: %w", err)
+	}
 	fts, err := enableFTS(db)
 	if err != nil {
 		db.Close()

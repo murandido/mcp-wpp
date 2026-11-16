@@ -138,16 +138,23 @@ func (s *Store) SetChatAccess(ctx context.Context, jid, state, note string) erro
 	if jid == "" {
 		return errors.New("chat JID is required")
 	}
+	// Denying or resetting a chat also deletes its notes: what was derived
+	// from a chat goes with the trust that allowed it.
 	switch state {
 	case AccessDefault:
-		_, err := s.db.ExecContext(ctx, "DELETE FROM chat_access WHERE jid = ?", jid)
-		return err
+		if _, err := s.db.ExecContext(ctx, "DELETE FROM chat_access WHERE jid = ?", jid); err != nil {
+			return err
+		}
+		return deleteChatNotes(ctx, s.db, jid)
 	case AccessAllowed, AccessDenied:
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO chat_access (jid, state, decided_at, note) VALUES (?, ?, ?, ?)
 			ON CONFLICT(jid) DO UPDATE SET state = excluded.state, decided_at = excluded.decided_at, note = excluded.note`,
 			jid, state, time.Now().UTC(), nullIfEmpty(note))
-		return err
+		if err != nil || state == AccessAllowed {
+			return err
+		}
+		return deleteChatNotes(ctx, s.db, jid)
 	default:
 		return fmt.Errorf("unknown access state %q", state)
 	}

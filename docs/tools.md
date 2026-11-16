@@ -13,6 +13,7 @@
 | `digest` | yes | yes |  | authorised chats only | Summarise recent activity: for every authorised chat with messages after a cut-off, the number of matching messages and the most recent ones, most active first, optionally only unread ones, ones that mention you, or ones matching keywords, grouped by chat or by sender. |
 | `download_media` | yes | yes |  | chat in `chat_jid` | Fetch the encrypted media payload (image, video, audio, document) for a previously-cached message, decrypt it, and write it to a local file under the store directory; returns the absolute path. |
 | `get_chat` | yes | yes |  | chat in `chat_jid` | Fetch metadata for a single cached chat by JID. |
+| `get_chat_notes` | yes | yes |  | chat in `chat_jid` | Read a chat's living notes (a summary kept by you across conversations) together with the cached messages that arrived after the notes were last updated, including cached audio transcripts and image text. |
 | `get_message_context` | yes | yes |  | authorised chats only | Fetch a specific cached message and the surrounding messages in its chat. |
 | `get_poll_results` | yes | yes |  | chat in `chat_jid` | Return the current vote tally for a cached poll. |
 | `get_status` | yes | yes |  | none (no chat content) | Report the WhatsApp connection state and its transition time, paired account, and read-only mode. |
@@ -22,6 +23,7 @@
 | `pairing_status` | yes | yes |  | none (no chat content) | Report the WhatsApp device-pairing state as a structured `setup_state` envelope. |
 | `request_sync` | yes | yes |  | chat in `chat_jid` | Ask WhatsApp servers to backfill historical messages for a chat into the local cache; messages arrive asynchronously and become queryable via list_messages once delivered. |
 | `search_contacts` | yes | yes |  | authorised chats only | Search the cached WhatsApp contact list by case-insensitive substring of name or phone number. |
+| `update_chat_notes` | yes | yes |  | chat in `chat_jid` | Save a chat's living notes after merging new messages into them. |
 
 ## access
 

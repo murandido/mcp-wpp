@@ -24,6 +24,11 @@ type AccessStore interface {
 	ChatsExist(ctx context.Context, jids []string) (map[string]bool, error)
 	ListAccessRequests(ctx context.Context, status string) ([]store.AccessRequest, error)
 	DecideAccessRequest(ctx context.Context, id int64, approve bool, jids []string) error
+	GetChatNotes(ctx context.Context, jid string) (store.ChatNotes, error)
+	ChatNotesHistory(ctx context.Context, jid string) ([]store.ChatNotesVersion, error)
+	RevertChatNotes(ctx context.Context, jid string, version int) (store.ChatNotes, error)
+	ClearChatNotes(ctx context.Context, jid string) error
+	NotesVersions(ctx context.Context) (map[string]int, error)
 }
 
 // accessHandlers serves the operator's consent workflow: JSON under

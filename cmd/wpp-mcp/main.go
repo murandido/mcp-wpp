@@ -33,6 +33,7 @@ Commands:
   access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
   token        API tokens for MCP clients: scoped, chat-limited, revocable (create, list, revoke)
   oauth        Approve and manage OAuth connections (pending, approve, deny, grants, revoke)
+  notes        See and manage the living notes kept per chat (show, history, revert, clear)
   audit        Show the audit log of tool calls and operator actions
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
   outbox       Approve, reject or cancel what the AI proposed or scheduled (with serve -write)
@@ -168,6 +169,8 @@ func main() {
 		code = runToken(storeDir, rest)
 	case "oauth":
 		code = runOAuth(storeDir, rest)
+	case "notes":
+		code = runNotes(storeDir, rest)
 	case "audit":
 		code = runAudit(storeDir, rest)
 	case "tools":
