@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/murandido/mcp-wpp/internal/auth"
+	"github.com/murandido/mcp-wpp/internal/clientip"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
 
@@ -388,34 +389,9 @@ func oauthError(w http.ResponseWriter, code int, errCode, desc string) {
 	writeJSON(w, code, body)
 }
 
-// clientIP returns the caller's address. When the peer is a reverse proxy on
-// the same host or network (a loopback, private or Unix socket peer, as with
-// Caddy in front or Docker's port proxy), the rightmost X-Forwarded-For
-// entry, which that proxy appended, is used instead. Only rate limiting and
-// the operator's `oauth pending` view depend on it.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(host)
-	trusted := host == "" || host == "@" || (ip != nil && (ip.IsLoopback() || ip.IsPrivate()))
-	if trusted {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			if last := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); last != nil {
-				return last.String()
-			}
-		}
-	}
-	if ip != nil {
-		return ip.String()
-	}
-	if host == "" || host == "@" {
-		return "local"
-	}
-	return host
-}
+// clientIP returns the caller's address (see clientip.FromRequest). Only
+// rate limiting and the operator's `oauth pending` view depend on it.
+func clientIP(r *http.Request) string { return clientip.FromRequest(r) }
 
 // ipLimiter allows n events per window per IP, with a bounded memory.
 type ipLimiter struct {

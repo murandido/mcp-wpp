@@ -457,6 +457,8 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -oauth` | `WPP_MCP_OAUTH` | off | Serve an OAuth 2.1 authorization server for remote connectors (see [Connect with OAuth](#connect-with-oauth)) |
 | `serve -public-url` | `WPP_MCP_PUBLIC_URL` | | Public `https://host` of the daemon, required with `-oauth`; the issuer, with the resource at `/mcp` |
 | `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
+| `serve -mcp-rate` | `WPP_MCP_RATE` | 120 | `/mcp` requests per minute per client token (token bucket, burst of half that); the operator token is exempt; over it, 429 with `Retry-After` and a JSON-RPC error body; 0 disables |
+| `serve -auth-fail-limit` | `WPP_MCP_AUTH_FAIL_LIMIT` | 20 | Rejected bearer credentials per client IP per minute before a 5-minute lock-out, during which every authenticated route answers 429 before checking the token; requests without credentials are not counted; 0 disables |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
 | `serve -self-approve` | `WPP_MCP_SELF_APPROVE` | off | With `-write`, decide proposals from your own WhatsApp chat (see [Approving from your phone](#approving-from-your-phone)) |

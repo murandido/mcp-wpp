@@ -80,6 +80,15 @@ type Config struct {
 	// endpoints and /admin/oauth/*), advertises it in the 401 challenge of
 	// /mcp and enforces the audience of OAuth access tokens.
 	OAuth OAuthProvider
+	// AuthFailLimit locks out a client IP for AuthCooldown after this many
+	// rejected bearer credentials within AuthFailWindow (zero durations use
+	// the defaults). 0 disables the lock-out.
+	AuthFailLimit  int
+	AuthFailWindow time.Duration
+	AuthCooldown   time.Duration
+	// MCPRate limits each client token to this many /mcp requests per
+	// minute (burst of half that). The operator is exempt. 0 disables it.
+	MCPRate int
 }
 
 // OAuthProvider is the OAuth authorization server. *oauth.Server
@@ -214,7 +223,9 @@ func (s *Server) Run(ctx context.Context) error {
 		s.cfg.OAuth.Mount(mux)
 	}
 
-	rootHandler := hostGuard(authGuard(securityHeaders(auditAdmin(mux, s.cfg.Audit)), s.cfg.AuthToken, ui, verifier, s.cfg.OAuth), s.cfg.AllowedHosts)
+	fails := newAuthFailures(s.cfg.AuthFailLimit, s.cfg.AuthFailWindow, s.cfg.AuthCooldown)
+	inner := securityHeaders(mcpRateLimit(auditAdmin(mux, s.cfg.Audit), newIdentityLimiter(s.cfg.MCPRate)))
+	rootHandler := hostGuard(authGuard(inner, s.cfg.AuthToken, ui, verifier, s.cfg.OAuth, fails), s.cfg.AllowedHosts)
 
 	ln, err := listen(s.cfg.Addr)
 	if err != nil {
