@@ -227,9 +227,11 @@ func TestProductionDriverFailedDialCancelsQRReader(t *testing.T) {
 
 	cancel()
 	driver.Disconnect()
-	deadline := time.Now().Add(time.Second)
-	for countPairingQRReaders() < before+3 && time.Now().Before(deadline) {
-		runtime.Gosched()
+	// The readers exit asynchronously once the dial fails; give a loaded CI
+	// runner time to schedule them before calling any of them leaked.
+	deadline := time.Now().Add(10 * time.Second)
+	for countPairingQRReaders() > before && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
 	if retained := countPairingQRReaders() - before; retained != 0 {
 		t.Fatalf("failed pairing retained %d QR-reader goroutines", retained)
