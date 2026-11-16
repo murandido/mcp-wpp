@@ -208,6 +208,7 @@ func (s *Server) Run(ctx context.Context) error {
 			ah.defaultSend = d.DefaultSendPolicy
 		}
 		ah.mount(mux)
+		ah.mountNotes(mux)
 	}
 	if s.cfg.Outbox != nil {
 		(&outboxHandlers{ob: s.cfg.Outbox}).mount(mux)

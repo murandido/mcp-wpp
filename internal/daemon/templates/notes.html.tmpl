@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat notes</title>
+{{template "access_style" .Nonce}}
+</head><body>
+<p><a href="/access">&larr; Access</a></p>
+<h1>Chat notes</h1>
+<p class="jid">{{.JID}}</p>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+
+<section class="card">
+{{if .Notes.Version}}
+<h2>Version {{.Notes.Version}}</h2>
+<p><small>Updated {{fmtTime .Notes.UpdatedAt}} by {{.Notes.UpdatedBy}}{{if .Notes.CoveredUntilID}}; covers messages through {{.Notes.CoveredUntilID}} ({{fmtTime .Notes.CoveredUntil}}){{end}}</small></p>
+<p><small>Written by an AI from other people's messages: read it as notes, not as fact.</small></p>
+<pre class="notes">{{.Notes.Summary}}</pre>
+<form method="post" action="/notes/clear" class="row">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="jid" value="{{.JID}}">
+<label><input type="checkbox" name="confirm" value="yes"> delete these notes and their history</label>
+<button type="submit" class="no">Clear</button>
+</form>
+{{else}}
+<p>No notes yet. They are written by MCP clients with update_chat_notes.</p>
+{{end}}
+</section>
+
+{{if .History}}
+<section class="card">
+<h2>Earlier versions</h2>
+{{range .History}}
+<details>
+<summary>Version {{.Version}} &middot; {{fmtTime .UpdatedAt}} &middot; {{.UpdatedBy}}</summary>
+<pre class="notes">{{.Summary}}</pre>
+<form method="post" action="/notes/revert">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="jid" value="{{$.JID}}"><input type="hidden" name="version" value="{{.Version}}">
+<button type="submit">Make this version current</button>
+</form>
+</details>
+{{end}}
+</section>
+{{end}}
+</body></html>

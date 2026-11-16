@@ -21,7 +21,7 @@ import (
 // CSP nonce. Changes go through the same AccessStore calls as the CLI's
 // /admin/access API, and auditAdmin records them the same way.
 
-//go:embed templates/access.html.tmpl templates/access_confirm.html.tmpl templates/access_head.html.tmpl templates/outbox.html.tmpl
+//go:embed templates/access.html.tmpl templates/access_confirm.html.tmpl templates/access_head.html.tmpl templates/outbox.html.tmpl templates/notes.html.tmpl
 var accessTemplateFS embed.FS
 
 var accessFuncs = template.FuncMap{
@@ -37,11 +37,13 @@ var accessFuncs = template.FuncMap{
 		}
 		return "hidden"
 	},
+	"fmtTime": fmtTime,
 }
 
 var (
 	accessTmpl        = template.Must(template.New("access.html.tmpl").Funcs(accessFuncs).ParseFS(accessTemplateFS, "templates/access.html.tmpl", "templates/access_head.html.tmpl"))
 	accessConfirmTmpl = template.Must(template.New("access_confirm.html.tmpl").Funcs(accessFuncs).ParseFS(accessTemplateFS, "templates/access_confirm.html.tmpl", "templates/access_head.html.tmpl"))
+	notesTmpl         = template.Must(template.New("notes.html.tmpl").Funcs(accessFuncs).ParseFS(accessTemplateFS, "templates/notes.html.tmpl", "templates/access_head.html.tmpl"))
 )
 
 const (
@@ -128,6 +130,8 @@ type filterLink struct {
 }
 
 type accessView struct {
+	// Notes maps a chat to its notes version, for chats that have notes.
+	Notes       map[string]int
 	Nonce       string
 	CSRFToken   string
 	Mode        string
@@ -203,6 +207,10 @@ func (h *accessHandlers) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.List, v.Chats, v.Total = list, pg.Chats, pg.Total
+	if v.Notes, err = h.st.NotesVersions(ctx); err != nil {
+		http.Error(w, "notes store: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if len(pg.Chats) > 0 {
 		v.From = (list.Page-1)*accessPageSize + 1
 		v.To = v.From + len(pg.Chats) - 1
