@@ -24,7 +24,9 @@ import (
 // route, the chat it named, a few whitelisted fields, the actor and whether
 // it succeeded. MCP traffic is audited per tool call in internal/mcp.
 
-// auditChatFields name the chat a request acts on.
+// auditChatFields name the chat a request acts on. A form that repeats the
+// field (a bulk action on /access, or approving several matches of a
+// request) gets one entry per chat, up to maxAuditChats.
 var auditChatFields = []string{"jid", "chat_jid"}
 
 // auditDetailFields are recorded verbatim. Anything else in a request
@@ -32,8 +34,12 @@ var auditChatFields = []string{"jid", "chat_jid"}
 var auditDetailFields = map[string]bool{
 	"mode": true, "state": true, "decision": true, "approve": true,
 	"name": true, "scopes": true, "chats": true, "expires_at": true,
-	"code": true, "days": true,
+	"code": true, "days": true, "send": true,
 }
+
+// maxAuditChats bounds the entries one request can produce. The /access
+// bulk form accepts fewer chats than this.
+const maxAuditChats = 500
 
 // maxAuditPeek bounds how much of a request body is inspected.
 const maxAuditPeek = 64 << 10
@@ -92,11 +98,15 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 			Duration: time.Since(start).Milliseconds(),
 			Outcome:  store.OutcomeOK,
 		}
+		var chats []string
 		for _, k := range auditChatFields {
-			if v := fields.Get(k); v != "" {
-				e.ChatJID = v
+			if vs := nonEmpty(fields[k]); len(vs) > 0 {
+				chats = vs
 				break
 			}
+		}
+		if len(chats) > maxAuditChats {
+			chats = chats[:maxAuditChats]
 		}
 		var detail []string
 		for _, m := range patternWildcard.FindAllStringSubmatch(r.Pattern, -1) {
@@ -114,6 +124,9 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 		for _, k := range keys {
 			detail = append(detail, k+"="+strings.Join(fields[k], ","))
 		}
+		if len(chats) > 1 {
+			detail = append(detail, fmt.Sprintf("batch=%d", len(chats)))
+		}
 		if id.Via == "session" {
 			detail = append(detail, "via=browser")
 		}
@@ -126,8 +139,29 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 		if status >= 400 || (status >= 300 && status < 400 && strings.Contains(rec.Header().Get("Location"), "error=")) {
 			e.Outcome = store.OutcomeError
 		}
-		_ = al.RecordAudit(context.WithoutCancel(r.Context()), e)
+		ctx := context.WithoutCancel(r.Context())
+		if len(chats) == 0 {
+			_ = al.RecordAudit(ctx, e)
+			return
+		}
+		for _, jid := range chats {
+			e.ChatJID = jid
+			_ = al.RecordAudit(ctx, e)
+		}
 	})
+}
+
+// nonEmpty returns the distinct non-empty values of vs, in order.
+func nonEmpty(vs []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range vs {
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // peekFields reads the request's JSON or form fields without consuming the

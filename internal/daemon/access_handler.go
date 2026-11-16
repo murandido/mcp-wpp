@@ -2,12 +2,10 @@ package daemon
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
-	"html/template"
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/murandido/mcp-wpp/internal/store"
@@ -21,27 +19,11 @@ type AccessStore interface {
 	SetChatAccess(ctx context.Context, jid, state, note string) error
 	SetChatSendPolicy(ctx context.Context, jid, policy string) error
 	ListAccess(ctx context.Context, query string, limit int) ([]store.AccessEntry, error)
+	ListAccessPage(ctx context.Context, opts store.AccessListOptions) (store.AccessListPage, error)
+	ChatsExist(ctx context.Context, jids []string) (map[string]bool, error)
 	ListAccessRequests(ctx context.Context, status string) ([]store.AccessRequest, error)
 	DecideAccessRequest(ctx context.Context, id int64, approve bool, jids []string) error
 }
-
-//go:embed templates/access.html.tmpl templates/outbox.html.tmpl
-var accessTemplateFS embed.FS
-
-var accessTmpl = template.Must(template.New("access.html.tmpl").Funcs(template.FuncMap{
-	"stateLabel": func(e store.AccessEntry) string {
-		switch e.State {
-		case store.AccessAllowed:
-			return "allowed"
-		case store.AccessDenied:
-			return "denied"
-		}
-		if e.Visible {
-			return "visible (mode all)"
-		}
-		return "hidden"
-	},
-}).ParseFS(accessTemplateFS, "templates/access.html.tmpl"))
 
 // accessHandlers serves the operator's consent workflow: JSON under
 // /admin/access (bearer only, used by `wpp-mcp access`) and the /access
@@ -69,22 +51,30 @@ func (h *accessHandlers) mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/access/requests/{id}", h.apiDecide)
 
 	mux.HandleFunc("GET /access", h.page)
-	mux.HandleFunc("POST /access/mode", h.form(func(r *http.Request) error {
+	mux.HandleFunc("GET /access/mode", h.modeConfirm)
+	mux.HandleFunc("POST /access/mode", h.form(plain(func(r *http.Request) error {
+		// The page asks first (GET /access/mode); a post without the
+		// confirmation changes nothing.
+		if r.FormValue("confirm") != "yes" {
+			return errors.New("confirm the mode change on its confirmation page")
+		}
 		return h.st.SetAccessMode(r.Context(), r.FormValue("mode"))
-	}))
-	mux.HandleFunc("POST /access/chat", h.form(func(r *http.Request) error {
+	})))
+	mux.HandleFunc("POST /access/bulk/review", h.bulkReview)
+	mux.HandleFunc("POST /access/bulk", h.form(h.bulkApply))
+	mux.HandleFunc("POST /access/chat", h.form(plain(func(r *http.Request) error {
 		return h.st.SetChatAccess(r.Context(), r.FormValue("jid"), formState(r.FormValue("state")), "set on /access")
-	}))
-	mux.HandleFunc("POST /access/send", h.form(func(r *http.Request) error {
+	})))
+	mux.HandleFunc("POST /access/send", h.form(plain(func(r *http.Request) error {
 		return h.st.SetChatSendPolicy(r.Context(), r.FormValue("jid"), r.FormValue("send"))
-	}))
-	mux.HandleFunc("POST /access/requests/{id}", h.form(func(r *http.Request) error {
+	})))
+	mux.HandleFunc("POST /access/requests/{id}", h.form(plain(func(r *http.Request) error {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
 			return err
 		}
 		return h.st.DecideAccessRequest(r.Context(), id, r.FormValue("decision") == "approve", r.Form["jid"])
-	}))
+	})))
 }
 
 func formState(v string) string {
@@ -200,79 +190,4 @@ func (h *accessHandlers) apiDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "approved": body.Approve})
-}
-
-// --- HTML page ---------------------------------------------------------------
-
-type accessPageData struct {
-	CSRFToken   string
-	Mode        string
-	DefaultSend string
-	Query       string
-	Chats       []store.AccessEntry
-	Requests    []store.AccessRequest
-	Error       string
-}
-
-func (h *accessHandlers) mintCSRF() string {
-	h.csrfMu.Lock()
-	defer h.csrfMu.Unlock()
-	if len(h.csrf) > 64 {
-		h.csrf = map[string]bool{}
-	}
-	t := randomToken()
-	h.csrf[t] = true
-	return t
-}
-
-func (h *accessHandlers) useCSRF(t string) bool {
-	h.csrfMu.Lock()
-	defer h.csrfMu.Unlock()
-	if t == "" || !h.csrf[t] {
-		return false
-	}
-	delete(h.csrf, t)
-	return true
-}
-
-func (h *accessHandlers) page(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	data := accessPageData{CSRFToken: h.mintCSRF(), Query: r.URL.Query().Get("q"), Error: r.URL.Query().Get("error"), DefaultSend: h.defaultSendPolicy()}
-	var err error
-	if data.Mode, err = h.st.AccessMode(ctx); err == nil {
-		if data.Chats, err = h.st.ListAccess(ctx, data.Query, 300); err == nil {
-			data.Requests, err = h.st.ListAccessRequests(ctx, "pending")
-		}
-	}
-	if err != nil {
-		http.Error(w, "access store: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	if err := accessTmpl.Execute(w, data); err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
-}
-
-// form wraps a state-changing form post: CSRF check, action, redirect back.
-func (h *accessHandlers) form(action func(*http.Request) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil || !h.useCSRF(r.FormValue("csrf_token")) {
-			http.Error(w, "invalid or missing CSRF token; reload /access", http.StatusForbidden)
-			return
-		}
-		back := "/access"
-		if q := strings.TrimSpace(r.FormValue("q")); q != "" {
-			back += "?q=" + template.URLQueryEscaper(q)
-		}
-		if err := action(r); err != nil {
-			sep := "?"
-			if strings.Contains(back, "?") {
-				sep = "&"
-			}
-			back += sep + "error=" + template.URLQueryEscaper(err.Error())
-		}
-		http.Redirect(w, r, back, http.StatusSeeOther) // always the local /access page; only the query is user text
-	}
 }

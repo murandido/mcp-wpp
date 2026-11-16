@@ -183,7 +183,7 @@ wpp-mcp access requests
 wpp-mcp access approve 3               # or: approve 3 <jid>  /  reject 3
 ```
 
-You can do the same on the `/access` page (`wpp-mcp open-ui -page /access`).
+You can do the same on the `/access` page (`wpp-mcp open-ui -page /access`). Pending requests are listed first, with one-click allow or dismiss. The chat list searches by name or number (case- and accent-insensitive), filters by state (allowed, denied, pending requests, groups, direct chats) and shows 50 chats at a time. You can tick up to 100 chats and allow or reset them together after a confirmation page, and set each chat's send policy. Switching the mode also asks for confirmation and says how many chats become visible. Changes on the page are audited like those from the CLI: one entry per chat, marked `via=browser`.
 
 ## Sending, with approval
 

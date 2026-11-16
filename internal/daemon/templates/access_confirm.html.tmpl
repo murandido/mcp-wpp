@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Confirm access change</title>
+{{template "access_style" .Nonce}}
+</head><body>
+<h1>Confirm</h1>
+{{if .NewMode}}
+<section class="card{{if eq .NewMode "all"}} mode-all{{end}}">
+<h2>Change the access mode to <strong class="mode">{{if eq .NewMode "all"}}all chats, except denied{{else}}only allowed chats{{end}}</strong>?</h2>
+{{if eq .NewMode "all"}}
+<p>The AI will see <strong>{{.Visible}}</strong> of {{.TotalChats}} cached chats: every chat except the {{.Denied}} you denied, including chats cached from now on.</p>
+{{else}}
+<p>The AI will only see the <strong>{{.Allowed}}</strong> chat(s) you allowed explicitly. The other cached chats ({{.TotalChats}} in all) disappear from its view.</p>
+{{end}}
+<form method="post" action="/access/mode" class="row">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="mode" value="{{.NewMode}}"><input type="hidden" name="confirm" value="yes">
+<input type="hidden" name="q" value="{{.List.Query}}"><input type="hidden" name="filter" value="{{.List.Filter}}"><input type="hidden" name="page" value="{{.List.Page}}">
+<button type="submit" class="{{if eq .NewMode "all"}}no{{else}}go{{end}}">Yes, switch to {{.NewMode}}</button>
+<a class="button" href="{{.BackURL}}">Cancel</a>
+</form>
+</section>
+{{else}}
+<section class="card">
+<h2>{{if eq .State "allowed"}}Allow{{else}}Reset{{end}} {{len .Chats}} chat(s)?</h2>
+<p>{{if eq .State "allowed"}}The AI will be able to read these chats.{{else}}These chats go back to the mode's default: hidden in allowlist mode, visible in mode all.{{end}}{{if .Missing}} <small>{{.Missing}} selected chat(s) are not cached and are left out.</small>{{end}}</p>
+<form method="post" action="/access/bulk">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="state" value="{{.State}}"><input type="hidden" name="confirm" value="yes">
+<input type="hidden" name="q" value="{{.List.Query}}"><input type="hidden" name="filter" value="{{.List.Filter}}"><input type="hidden" name="page" value="{{.List.Page}}">
+<ul class="chats">
+{{range .Chats}}<li><input type="hidden" name="jid" value="{{.JID}}">{{if .Name}}{{.Name}}{{else}}<em class="muted">unnamed</em>{{end}}{{if .IsGroup}} <small>(group)</small>{{end}} <span class="jid">{{.JID}}</span> <span class="pill {{.State}}">{{stateLabel .}}</span></li>
+{{end}}</ul>
+<div class="row">
+<button type="submit" class="{{if eq .State "allowed"}}go{{end}}">Yes, {{if eq .State "allowed"}}allow{{else}}reset{{end}} {{len .Chats}} chat(s)</button>
+<a class="button" href="{{.BackURL}}">Cancel</a>
+</div>
+</form>
+</section>
+{{end}}
+</body></html>
