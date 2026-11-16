@@ -18,6 +18,7 @@
 | `get_status` | yes | yes |  | none (no chat content) | Report the WhatsApp connection state and its transition time, paired account, and read-only mode. |
 | `list_chats` | yes | yes |  | authorised chats only | List cached WhatsApp chats (1:1 and group), optionally filtered by name substring and sorted by recency or alphabetic name. |
 | `list_messages` | yes | yes |  | authorised chats only | Search and page through cached WhatsApp messages, optionally filtering by chat, sender, time range and words (accent-insensitive full-text search); can include surrounding context messages. |
+| `mark_unread` | yes | yes |  | chat in `chat_jid` | Move a chat's local read mark back so digest with only_unread shows its messages again: from message_id onward, or the whole chat when message_id is omitted. |
 | `pairing_status` | yes | yes |  | none (no chat content) | Report the WhatsApp device-pairing state as a structured `setup_state` envelope. |
 | `request_sync` | yes | yes |  | chat in `chat_jid` | Ask WhatsApp servers to backfill historical messages for a chat into the local cache; messages arrive asynchronously and become queryable via list_messages once delivered. |
 | `search_contacts` | yes | yes |  | authorised chats only | Search the cached WhatsApp contact list by case-insensitive substring of name or phone number. |
@@ -47,6 +48,7 @@
 
 | Tool | Default | Read-only | Approval | Chat access | Description |
 |---|:-:|:-:|:-:|---|---|
+| `extract_image_text` | yes | yes |  | chat in `chat_jid` | Extract the text in an image message (or a PNG, JPEG or WebP document) with local Tesseract OCR; downloads the image if it is not cached, recognises it on this machine without uploading it anywhere, and caches the text without changing the WhatsApp account. |
 | `transcribe_audio` | yes |  | yes | chat in `chat_jid` | Transcribe an audio message using the configured speech-to-text service; downloads the audio, uploads it to that service, and caches the transcript without changing the WhatsApp account. |
 
 ## labels

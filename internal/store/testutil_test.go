@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/murandido/mcp-wpp/internal/crypto"
 )
 
 //go:embed testdata/seed.sql
@@ -29,10 +31,9 @@ func openTestStore(t *testing.T) *Store {
 	id := uniqueDBCounter.Add(1)
 	dsn := fmt.Sprintf("file:store_test_%d?mode=memory&cache=shared&_foreign_keys=on", id)
 
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		t.Fatalf("open in-memory db: %v", err)
-	}
+	// The crypto connector (unkeyed) registers the SQL functions the store
+	// relies on, like every production open.
+	db := sql.OpenDB(crypto.ReadOnlyConnector(dsn, nil))
 	// A single connection to avoid per-connection isolation weirdness with
 	// shared-cache in-memory databases.
 	db.SetMaxOpenConns(1)
@@ -54,11 +55,7 @@ func openTestStore(t *testing.T) *Store {
 
 	// A second handle to the same shared-cache DB, playing the role of
 	// whatsmeowDB. LID lookups hit the same underlying tables.
-	waDB, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		db.Close()
-		t.Fatalf("open whatsmeow db handle: %v", err)
-	}
+	waDB := sql.OpenDB(crypto.ReadOnlyConnector(dsn, nil))
 	waDB.SetMaxOpenConns(1)
 
 	s := &Store{

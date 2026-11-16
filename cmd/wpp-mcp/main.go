@@ -70,6 +70,8 @@ serve flags:
   -audit-days N          Keep the audit log N days (default 90, env WPP_MCP_AUDIT_DAYS; 0 disables it)
   -enable-labels         Enable WhatsApp Business label sync and tools
   -full-history          Ask the phone for a full history sync on a new pairing
+  -ocr                   Extract text from images with the local tesseract (env WPP_MCP_OCR)
+  -ocr-langs LANGS       Tesseract languages, e.g. por+eng (default; env WPP_MCP_OCR_LANGS)
   -webhook-url URL       POST live incoming messages from allowed chats here (signed)
   -webhook-secret S      HMAC-SHA256 signing secret, required with -webhook-url
   -webhook-include-text  Include message text in webhooks (it leaves the machine)

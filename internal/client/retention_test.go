@@ -33,6 +33,9 @@ func TestPurgeOlderThan(t *testing.T) {
 	if err := s.PutTranscript(ctx, store.Transcript{MessageID: "OLD", ChatJID: jid, Text: "old words"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.PutImageText(ctx, store.ImageText{MessageID: "OLD", ChatJID: jid, Text: "old sign"}); err != nil {
+		t.Fatal(err)
+	}
 
 	c := newClientWithStore(t, s)
 	n, err := c.PurgeOlderThan(ctx, 30*24*time.Hour)
@@ -45,6 +48,9 @@ func TestPurgeOlderThan(t *testing.T) {
 	}
 	if tr, _ := s.GetTranscript(ctx, "OLD", jid); tr != nil {
 		t.Fatal("transcript of a purged message survived")
+	}
+	if it, _ := s.GetImageText(ctx, "OLD", jid); it != nil {
+		t.Fatal("OCR text of a purged message survived")
 	}
 	if _, err := os.Stat(filepath.Join(s.Dir(), jid, hex.EncodeToString([]byte("OLD")))); !os.IsNotExist(err) {
 		t.Fatal("media of a purged message survived")

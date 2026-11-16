@@ -21,6 +21,7 @@ var expectedToolNames = []string{
 	"digest",
 	"download_media",
 	"edit_message",
+	"extract_image_text",
 	"get_blocklist",
 	"get_chat",
 	"get_chat_labels",
@@ -40,6 +41,7 @@ var expectedToolNames = []string{
 	"list_messages",
 	"mark_chat_read",
 	"mark_read",
+	"mark_unread",
 	"pairing_status",
 	"request_chat_access",
 	"request_sync",
@@ -130,7 +132,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 50
+	const want = 52
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -143,8 +145,8 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 46 {
-		t.Fatalf("default tool count = %d, want 45", got)
+	if got := len(s.MCP().ListTools()); got != 48 {
+		t.Fatalf("default tool count = %d, want 48", got)
 	}
 }
 
@@ -164,11 +166,12 @@ func TestToolsByDomain(t *testing.T) {
 		"tools_query.go":      {"list_chats", "search_contacts"},
 		"tools_send.go":       {"send_message", "send_file"},
 		"tools_message.go":    {"edit_message", "mark_read"},
+		"tools_digest.go":     {"digest", "mark_unread"},
 		"tools_groups.go":     {"create_group", "leave_group"},
 		"tools_media.go":      {"send_poll", "send_contact_card"},
 		"tools_labels.go":     {"list_labels"},
 		"tools_privacy.go":    {"get_blocklist", "send_presence"},
-		"tools_transcribe.go": {"transcribe_audio"},
+		"tools_transcribe.go": {"transcribe_audio", "extract_image_text"},
 	}
 
 	for file, names := range domains {
@@ -183,6 +186,7 @@ func TestToolsByDomain(t *testing.T) {
 var expectedReadOnlyTools = map[string]bool{
 	"digest":               true,
 	"download_media":       true,
+	"extract_image_text":   true,
 	"get_blocklist":        true,
 	"get_chat":             true,
 	"get_chat_labels":      true,
@@ -197,6 +201,7 @@ var expectedReadOnlyTools = map[string]bool{
 	"list_groups":          true,
 	"list_labels":          true,
 	"list_messages":        true,
+	"mark_unread":          true,
 	"pairing_status":       true,
 	"request_chat_access":  true,
 	"request_sync":         true,

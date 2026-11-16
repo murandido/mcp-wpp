@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -31,9 +32,9 @@ func (s *Server) registerDigestTool() {
 		mcp.WithNumber("hours", mcp.Description("look back this many hours (default 24, max 720)")),
 		mcp.WithArray("chat_jids", mcp.Items(map[string]any{"type": "string"}), mcp.Description("restrict to these chats ("+jidDesc+")")),
 		mcp.WithNumber("max_per_chat", mcp.Description("most recent messages to show per group (default 10, max 50)")),
-		mcp.WithBoolean("only_unread", mcp.Description("only incoming messages newer than what you last read in each chat (read state comes from your own devices' read receipts and mark_read; a chat never read counts as unread)")),
+		mcp.WithBoolean("only_unread", mcp.Description("only incoming messages newer than what you last read in each chat (read state comes from your own devices' read receipts and mark_read, and mark_unread moves it back; a chat never read counts as unread)")),
 		mcp.WithBoolean("mentions_only", mcp.Description("only messages that @-mention you")),
-		mcp.WithArray("keywords", mcp.Items(map[string]any{"type": "string"}), mcp.Description("only messages containing any of these words (case-insensitive; accent-insensitive prefix match when the full-text index is available)")),
+		mcp.WithArray("keywords", mcp.Items(map[string]any{"type": "string"}), mcp.Description("only messages containing any of these words (case- and accent-insensitive; prefix match when the full-text index is available, substring match otherwise)")),
 		mcp.WithString("group_by", mcp.Enum(store.DigestByChat, store.DigestBySender), mcp.Description("`chat` (default) or `sender`")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
@@ -91,5 +92,37 @@ func (s *Server) registerDigestTool() {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(untrustedPreamble + st.FormatDigest(ctx, d, since)), nil
+	}))
+}
+
+type markUnreadArgs struct {
+	ChatJID   string `json:"chat_jid"`
+	MessageID string `json:"message_id"`
+}
+
+// registerMarkUnread wires mark_unread: the explicit way to move the
+// digest's read mark back. It changes local bookkeeping only.
+func (s *Server) registerMarkUnread() {
+	tool := mcp.NewTool("mark_unread",
+		mcp.WithDescription("Move a chat's local read mark back so digest with only_unread shows its messages again: from message_id onward, or the whole chat when message_id is omitted. Changes only this server's read state, never moves the mark forward, and sends nothing to WhatsApp (your phone keeps its own unread state; a later read on any device moves the mark forward again); use mark_read to send read receipts. Returns a plain-text confirmation."),
+		mcp.WithString("chat_jid", mcp.Required(), mcp.Description(jidDesc)),
+		mcp.WithString("message_id", mcp.Description("optional id of a cached message in the chat, as returned by list_messages; it and every later message count as unread")),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+	)
+	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, _ mcp.CallToolRequest, a markUnreadArgs) (*mcp.CallToolResult, error) {
+		if r := requireNonEmpty("chat_jid", a.ChatJID); r != nil {
+			return r, nil
+		}
+		jid := s.chatJIDFor(a.ChatJID)
+		if err := s.store(ctx).RewindChatRead(ctx, jid, a.MessageID); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if a.MessageID != "" {
+			return mcp.NewToolResultText(fmt.Sprintf("Marked %s unread from message %s (local digest read state only)", jid, a.MessageID)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Marked %s unread (local digest read state only)", jid)), nil
 	}))
 }

@@ -227,3 +227,29 @@ func TestMediaCipher_SealOpenAndBinding(t *testing.T) {
 		t.Fatalf("plaintext input: %v", err)
 	}
 }
+
+// TestConnector_RegistersUnaccentLower checks that every connection, keyed
+// or not, has the folding function the store's LIKE fallback uses.
+func TestConnector_RegistersUnaccentLower(t *testing.T) {
+	keys := [][]byte{nil}
+	if CipherAvailable() {
+		keys = append(keys, testKeys(t).Messages)
+	}
+	for _, key := range keys {
+		db, err := OpenSQLite("file:"+filepath.Join(t.TempDir(), "f.db"), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got string
+		var null sql.NullString
+		if err := db.QueryRow("SELECT unaccent_lower('JOÃO Cauê'), unaccent_lower(NULL)").Scan(&got, &null); err != nil {
+			t.Fatal(err)
+		}
+		db.Close()
+		// mattn/go-sqlite3 hands a Go function NULL as an empty value, so
+		// NULL may fold to ''; either way it never matches a search pattern.
+		if got != "joao caue" || null.String != "" {
+			t.Fatalf("keyed=%v: got %q, %v", key != nil, got, null)
+		}
+	}
+}

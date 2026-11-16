@@ -128,7 +128,7 @@ func TestAccess_ListToolsOnlySeeAllowedChats(t *testing.T) {
 func TestAccess_ChatToolsRefuseHiddenChats(t *testing.T) {
 	s, _ := accessServer(t)
 	nonexistent := "449999999999@s.whatsapp.net"
-	for _, tool := range []string{"get_chat", "download_media", "request_sync", "get_poll_results"} {
+	for _, tool := range []string{"get_chat", "download_media", "request_sync", "get_poll_results", "extract_image_text", "mark_unread"} {
 		args := map[string]any{"chat_jid": hiddenJID, "message_id": "x", "poll_message_id": "x"}
 		hidden := callToolDirect(t, s, tool, args)
 		args["chat_jid"] = nonexistent

@@ -161,7 +161,7 @@ func (s *Store) digestWhere(p DigestParams) (string, []any) {
 // keywordClause matches any of the keywords. Keywords of at least
 // minFTSQuery characters use the FTS5 index (prefix, case- and
 // accent-insensitive) when it is available; shorter ones, and every keyword
-// without FTS5, use a case-insensitive substring match.
+// without FTS5, use a case- and accent-insensitive substring match.
 func (s *Store) keywordClause(keywords []string) (string, []any) {
 	var (
 		ors  []string
@@ -179,8 +179,8 @@ func (s *Store) keywordClause(keywords []string) (string, []any) {
 				continue
 			}
 		}
-		ors = append(ors, `LOWER(messages.content) LIKE LOWER(?) ESCAPE '\'`)
-		args = append(args, "%"+escapeLike(k)+"%")
+		ors = append(ors, foldMatch("messages.content"))
+		args = append(args, foldPattern(k))
 	}
 	if len(fts) > 0 {
 		ors = append(ors, "messages.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")

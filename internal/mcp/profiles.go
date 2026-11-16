@@ -34,6 +34,7 @@ var toolGroup = map[string]string{
 	"request_sync":        groupCore,
 	"get_poll_results":    groupCore,
 	"digest":              groupCore,
+	"mark_unread":         groupCore,
 
 	// messaging: write tools (also gated by -write).
 	"send_message":       groupMessaging,
@@ -47,7 +48,8 @@ var toolGroup = map[string]string{
 	"mark_chat_read":     groupMessaging,
 	"schedule_message":   groupMessaging,
 
-	"transcribe_audio": groupTranscribe,
+	"transcribe_audio":   groupTranscribe,
+	"extract_image_text": groupTranscribe,
 
 	"get_chat_labels":     groupLabels,
 	"list_chats_by_label": groupLabels,

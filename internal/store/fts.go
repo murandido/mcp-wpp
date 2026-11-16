@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/murandido/mcp-wpp/internal/textfold"
 )
 
 // Full-text search over message text with SQLite FTS5. The index is an
@@ -67,6 +69,20 @@ func ftsMatchQuery(q string) string {
 	return strings.Join(terms, " ")
 }
 
+// foldMatch is a LIKE condition matching col against a foldPattern
+// argument: a case- and accent-insensitive substring match. It is the
+// fallback when FTS5 is missing or the query is too short for the index.
+// unaccent_lower is registered on every connection by the crypto connector.
+func foldMatch(col string) string {
+	return textfold.SQLFunc + "(" + col + `) LIKE ? ESCAPE '\'`
+}
+
+// foldPattern is the LIKE argument for foldMatch: q folded, with LIKE
+// wildcards escaped so they match literally.
+func foldPattern(q string) string {
+	return "%" + escapeLike(textfold.Fold(q)) + "%"
+}
+
 // FTSEnabled reports whether full-text search is available. Without it,
-// list_messages matches substrings and is accent-sensitive.
+// list_messages matches substrings (still case- and accent-insensitive).
 func (s *Store) FTSEnabled() bool { return s.fts }

@@ -18,6 +18,7 @@ internal/oauth/      OAuth 2.1 authorization server: metadata, DCR, CIMD fetch (
 internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, OAuth clients and grants, audit log
 internal/webhook/    signed outgoing webhooks for live incoming messages: filters, bounded queue, coalescing, retries
 internal/transcribe/ OpenAI-compatible speech-to-text client
+internal/ocr/        local Tesseract OCR for images: stdin/stdout only, timeout, size and output bounds
 internal/security/   path allowlisting, filename sanitising, log redaction
 e2e/                 end-to-end tests against the real binary (build tag e2e)
 docs/                tools.md (generated), systemd/launchd units, Claude Code hook
@@ -61,9 +62,9 @@ make check           # every CI gate: lint (vet, gofmt, golangci-lint), govulnch
 make hooks           # once per clone: commit-msg check and a pre-push `make lint test`
 ```
 
-Lint findings are fixed, not silenced. A `//nolint` needs the linter name and a reason, and `nolintlint` enforces that. Repository-wide exclusions live in `.golangci.yml` with a justification. Ubuntu and Debian SQLCipher packages include FTS5, but Fedora's does not; there, FTS tests skip locally. The container stage (`WPP_MCP_REQUIRE_FTS5=1`) always requires it.
+Lint findings are fixed, not silenced. A `//nolint` needs the linter name and a reason, and `nolintlint` enforces that. Repository-wide exclusions live in `.golangci.yml` with a justification. Ubuntu and Debian SQLCipher packages include FTS5, but Fedora's does not; there, FTS tests skip locally. The container stage (`WPP_MCP_REQUIRE_FTS5=1`) always requires it. OCR tests that run the real `tesseract` skip when it is missing, except in the container stage (`WPP_MCP_REQUIRE_TESSERACT=1`).
 
-A plain `go test ./...` also works: crypto and FTS tests skip, and the store falls back to LIKE search. Store tests use `openTestStore(t)` (seeded in-memory DB, `internal/store/testdata/seed.sql`). Access tests in `internal/mcp/access_test.go` show how to build a server over a real store without connecting to WhatsApp. Never point tests at a live account.
+A plain `go test ./...` also works: crypto and FTS tests skip, and the store falls back to LIKE search, which stays case- and accent-insensitive through `unaccent_lower`, a SQL function the crypto connector registers on every connection (so test databases must be opened through it too). Store tests use `openTestStore(t)` (seeded in-memory DB, `internal/store/testdata/seed.sql`). Access tests in `internal/mcp/access_test.go` show how to build a server over a real store without connecting to WhatsApp. Never point tests at a live account.
 
 When adding a tool:
 
