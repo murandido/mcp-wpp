@@ -86,7 +86,7 @@
 <option value="confirm"{{if eq .Send "confirm"}} selected{{end}}>confirm</option>
 <option value="direct"{{if eq .Send "direct"}} selected{{end}}>direct</option>
 </select> <button type="submit">Set</button>
-</form></td>
+</form>{{if .Window}}<br><small title="Sends outside this window are deferred; change it with wpp-mcp access window">window {{.Window}}</small>{{end}}</td>
 <td class="hide-sm"><small>{{if not .LastMessageTime.IsZero}}{{.LastMessageTime.Format "2006-01-02 15:04"}}{{end}}</small></td>
 <td>
 <form class="inline" method="post" action="/access/chat">

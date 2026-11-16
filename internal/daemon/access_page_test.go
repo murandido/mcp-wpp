@@ -283,6 +283,17 @@ func TestAccessPage_SendPolicyChangeIsAudited(t *testing.T) {
 	}
 }
 
+// A chat's send window is shown next to its send policy.
+func TestAccessPage_ShowsSendWindow(t *testing.T) {
+	s, st := accessPageDaemon(t, nil)
+	if err := st.SetChatSendWindow(context.Background(), accAlice, "08:00-22:00"); err != nil {
+		t.Fatal(err)
+	}
+	if _, body, _ := s.get("/access?q=ali"); !strings.Contains(body, "window 08:00-22:00") {
+		t.Fatal("page does not show the send window")
+	}
+}
+
 func TestAccessPage_ModeChangeNeedsConfirmation(t *testing.T) {
 	s, st := accessPageDaemon(t, nil)
 	ctx := context.Background()
