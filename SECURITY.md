@@ -22,6 +22,10 @@ Issues in WhatsApp's protocol handling belong to [whatsmeow](https://github.com/
 - **Backups are as sensitive as the store, minus the key.** `wpp-mcp backup` archives the databases and media still encrypted with the store's key, and never includes the key file or the token. Anyone holding both an archive and its key can read it, so keep them apart. If a key may have leaked, rotate it with `wpp-mcp rekey`; archives made before the rotation stay readable with the old key.
 - **Monitoring is not a side channel.** `/admin/metrics` needs the bearer token, and neither its labels nor session alert payloads carry JIDs, names, numbers or message content. The alert URL and header are treated as secrets and never logged.
 
+## Supply chain
+
+Release images are built by `.github/workflows/release.yml` only after the full test stage passes, with every action pinned to a commit SHA. The published index and its platform images are signed with cosign keyless signing (GitHub OIDC, Fulcio certificate, Rekor log entry) by digest, and each platform image carries an SPDX SBOM attestation; BuildKit provenance is attached as well. See "Verify the image" in the README for the `cosign verify` command.
+
 ## Out of scope
 
 - Compromise of the machine or user account running the daemon.

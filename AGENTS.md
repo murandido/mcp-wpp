@@ -93,7 +93,7 @@ When adding a tool:
 - Commit subjects are `type(scope): summary`, with `!` before the colon for breaking changes, e.g. `feat(access): …`, `fix(crypto)!: …`. Allowed types: feat, fix, chore, docs, refactor, perf, test, build, ci, style, revert. The scope is the area touched: `access`, `crypto`, `daemon`, `mcp`, `store`, `client`, `pairing`, `outbox`, `cli`, `docker`, `ci`, `docs`, `deps`. `scripts/check-commit-msg.sh` enforces it in the commit-msg hook and in CI, for commits and PR titles alike.
 - Branch from `main` (`feat/<slug>`, `fix/<slug>`) and open focused pull requests. The required check is **All gates**: commits, `make check`, the container test stage, CodeQL and the secrets scan. `main` is squash-merged only, with the PR title as the commit subject (`scripts/protect-main.sh` configures this).
 - Versions come from Git tags (`git describe` → `main.Version` via `-ldflags`). Do not add a version file. Pre-1.0, a minor bump may break things; mark those commits with `!` and a `BREAKING CHANGE:` footer.
-- Release: tag `vX.Y.Z` on a clean `main`. `.github/workflows/release.yml` publishes multi-arch images to `ghcr.io/murandido/mcp-wpp`.
+- Release: tag `vX.Y.Z` on a clean `main`. `.github/workflows/release.yml` publishes multi-arch images to `ghcr.io/murandido/mcp-wpp`, signs the index and platform images by digest with cosign keyless (GitHub OIDC) and attaches SPDX SBOM attestations. Keep each job's `permissions` minimal and every action pinned to a full commit SHA.
 
 ## Language
 

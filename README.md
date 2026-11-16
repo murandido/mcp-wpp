@@ -47,6 +47,27 @@ The container runs as your user (`WPP_UID`/`WPP_GID`, default 1000) with a read-
 
 To update, `docker compose pull && docker compose up -d`. Pin a release with `WPP_MCP_TAG=0.1.0` instead of `latest`. To build from source instead, run `WPP_MCP_VERSION=$(git describe --tags --always) docker compose build`, so `wpp-mcp -version` reports what you built.
 
+#### Verify the image
+
+Release images (from the release after 0.9.0 on) are signed with [cosign](https://github.com/sigstore/cosign) keyless signing: the certificate names this repository's release workflow and the tag it ran for, and the signature is logged in the public Rekor transparency log. There is no key to distribute. With cosign 3 or newer:
+
+```bash
+cosign verify ghcr.io/murandido/mcp-wpp:<version> \
+  --certificate-identity-regexp '^https://github\.com/murandido/mcp-wpp/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The index and each platform image are signed. Each platform image also carries an SPDX SBOM attestation, verified against its digest (listed by `docker buildx imagetools inspect ghcr.io/murandido/mcp-wpp:<version>`):
+
+```bash
+cosign verify-attestation --type spdxjson \
+  --certificate-identity-regexp '^https://github\.com/murandido/mcp-wpp/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/murandido/mcp-wpp@sha256:<platform digest>
+```
+
+To be sure you run what you verified, pin the digest in `compose.yaml` (`image: ghcr.io/murandido/mcp-wpp@sha256:...`) rather than a tag.
+
 ### Native (Linux, macOS)
 
 Requirements: Go 1.26+, a C toolchain, and SQLCipher (`dnf install sqlcipher-devel`, `apt install libsqlcipher-dev` or `brew install sqlcipher`).
