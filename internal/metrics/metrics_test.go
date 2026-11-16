@@ -29,6 +29,12 @@ func testSource() *Source {
 	tools.Inc("send_message", "error")
 	alerts := NewLabeledCounter("event", "result")
 	alerts.Inc("session_down", "ok")
+	denied := NewLabeledCounter("tool")
+	denied.Inc("get_chat")
+	refusals := NewLabeledCounter("code", "route")
+	refusals.Inc("401", "mcp")
+	refusals.Inc("429", "mcp")
+	refusals.Inc("403", "page")
 	return &Source{
 		Version: "v1.2.3",
 		Start:   start,
@@ -40,8 +46,10 @@ func testSource() *Source {
 		Counts: func(context.Context) (store.Counts, error) {
 			return store.Counts{ChatsCached: 10, ChatsVisible: 3, OutboxPending: 1}, nil
 		},
-		ToolCalls: tools,
-		Alerts:    alerts,
+		ToolCalls:    tools,
+		Alerts:       alerts,
+		Denied:       denied,
+		HTTPRefusals: refusals,
 	}
 }
 
@@ -90,6 +98,10 @@ func TestCollect_FormatAndValues(t *testing.T) {
 		`wpp_mcp_tool_calls_total{tool="list_chats",outcome="ok"} 2`,
 		`wpp_mcp_tool_calls_total{tool="send_message",outcome="error"} 1`,
 		`wpp_mcp_alerts_total{event="session_down",result="ok"} 1`,
+		`wpp_mcp_tool_calls_denied_total{tool="get_chat"} 1`,
+		`wpp_mcp_http_refusals_total{code="401",route="mcp"} 1`,
+		`wpp_mcp_http_refusals_total{code="429",route="mcp"} 1`,
+		`wpp_mcp_http_refusals_total{code="403",route="page"} 1`,
 		"wpp_mcp_chats_cached 10",
 		"wpp_mcp_chats_visible 3",
 		"wpp_mcp_outbox_pending 1",
@@ -113,7 +125,8 @@ func TestCollect_NoPersonalData(t *testing.T) {
 	if strings.Contains(body, "@") || strings.Contains(body, "4477") {
 		t.Fatalf("metrics leak a JID or number:\n%s", body)
 	}
-	allowed := map[string]bool{"v1.2.3": true, "list_chats": true, "send_message": true, "ok": true, "error": true, "session_down": true}
+	allowed := map[string]bool{"v1.2.3": true, "list_chats": true, "send_message": true, "ok": true, "error": true, "session_down": true,
+		"get_chat": true, "401": true, "403": true, "429": true, "mcp": true, "page": true}
 	for _, s := range connectionStates {
 		allowed[s] = true
 	}

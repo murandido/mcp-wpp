@@ -31,6 +31,7 @@ type Server struct {
 	labelsEnabled bool
 	confirmSends  bool
 	auditor       Auditor
+	onDenied      func(tool string)
 	// now is the scheduling clock; nil means time.Now (see SetClock).
 	now func() time.Time
 	// schedWake nudges the scheduler when a message is scheduled.
