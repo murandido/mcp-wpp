@@ -203,7 +203,13 @@ func isMCPPath(path string) bool { return path == "/mcp" || strings.HasPrefix(pa
 // be nil, which refuses every such token). Every rejection, whatever the
 // reason, is the same 401; on /mcp with OAuth it carries the RFC 9728
 // resource_metadata challenge.
-func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier, op OAuthProvider) http.Handler {
+//
+// fails, when non-nil, counts rejected bearer credentials per client IP and,
+// once an IP reaches its limit, answers 429 to every authenticated route
+// from it before any credential is compared. Requests without an
+// Authorization header (a browser without a session, an MCP client
+// discovering the OAuth challenge) are refused as usual but never counted.
+func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier, op OAuthProvider, fails *authFailures) http.Handler {
 	expected := []byte("Bearer " + token)
 	bearerOK := func(r *http.Request) bool {
 		return token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), expected) == 1
@@ -231,6 +237,9 @@ func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier
 		mcpChallenge += fmt.Sprintf(`, resource_metadata=%q, scope="read"`, op.ResourceMetadataURL())
 	}
 	deny := func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			fails.fail(requestIP(r))
+		}
 		c := challenge
 		if isMCPPath(r.URL.Path) {
 			c = mcpChallenge
@@ -243,10 +252,16 @@ func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var id auth.Identity
-		switch classify(r.URL.Path) {
-		case classPublic:
+		class := classify(r.URL.Path)
+		if class == classPublic {
 			next.ServeHTTP(w, r)
 			return
+		}
+		if left, blocked := fails.blocked(requestIP(r)); blocked {
+			tooManyAuthFailures(w, left)
+			return
+		}
+		switch class {
 		case classBearer:
 			switch {
 			case bearerOK(r):

@@ -85,6 +85,10 @@ serve flags:
   -oauth                 Serve an OAuth 2.1 authorization server for remote connectors (env WPP_MCP_OAUTH)
   -public-url URL        Public https origin, required with -oauth (env WPP_MCP_PUBLIC_URL)
   -oauth-redirect-uris L Redirect URI allowlist (default https://claude.ai/api/mcp/auth_callback)
+  -mcp-rate N            /mcp requests per minute per client token (default 120, env WPP_MCP_RATE; 0 disables)
+  -auth-fail-limit N     Failed bearer attempts per IP per minute before a 5m lock-out (default 20,
+                         env WPP_MCP_AUTH_FAIL_LIMIT; 0 disables)
+
 Every HTTP route except /healthz and /readyz requires the operator bearer
 token that serve stores in <store>/token (or WPP_MCP_TOKEN). /mcp also
 accepts client tokens from ` + "`wpp-mcp token create`" + ` and, with -oauth,
