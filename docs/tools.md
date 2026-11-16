@@ -47,6 +47,7 @@
 
 | Tool | Default | Read-only | Approval | Chat access | Description |
 |---|:-:|:-:|:-:|---|---|
+| `extract_image_text` | yes | yes |  | chat in `chat_jid` | Extract the text in an image message (or a PNG, JPEG or WebP document) with local Tesseract OCR; downloads the image if it is not cached, recognises it on this machine without uploading it anywhere, and caches the text without changing the WhatsApp account. |
 | `transcribe_audio` | yes |  | yes | chat in `chat_jid` | Transcribe an audio message using the configured speech-to-text service; downloads the audio, uploads it to that service, and caches the transcript without changing the WhatsApp account. |
 
 ## labels

@@ -77,6 +77,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	ocrOpts, err := registerOCRFlags(fs, os.Getenv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	fs.BoolVar(&write, "write", write, "expose tools that send messages or change the WhatsApp account (env WPP_MCP_WRITE); default is read-only")
 	fs.BoolVar(&labelsEnabled, "enable-labels", labelsEnabled, "enable WhatsApp Business label sync and tools (env WPP_MCP_LABELS)")
 	fs.StringVar(&tools, "tools", os.Getenv("WPP_MCP_TOOLS"), "comma-separated tool groups or names to expose: default, all, core, messaging, transcribe, labels, access, contacts, groups, privacy, polls (env WPP_MCP_TOOLS)")
@@ -129,6 +134,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 			fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 			return 2
 		}
+	}
+	ocrEngine, err := ocrOpts.engine(os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
 	}
 	selection := &mcpsrv.ToolSelection{Enable: mcpsrv.ParseToolList(tools), Disable: mcpsrv.ParseToolList(disableTools)}
 
@@ -197,6 +207,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		Redactor:         redactor,
 		LabelsEnabled:    labelsEnabled,
 		FullHistory:      fullHistory,
+		OCR:              ocrEngine,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "init client: %v\n", err)

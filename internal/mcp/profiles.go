@@ -47,7 +47,8 @@ var toolGroup = map[string]string{
 	"mark_chat_read":     groupMessaging,
 	"schedule_message":   groupMessaging,
 
-	"transcribe_audio": groupTranscribe,
+	"transcribe_audio":   groupTranscribe,
+	"extract_image_text": groupTranscribe,
 
 	"get_chat_labels":     groupLabels,
 	"list_chats_by_label": groupLabels,

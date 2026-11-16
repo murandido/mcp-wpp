@@ -21,6 +21,7 @@ var expectedToolNames = []string{
 	"digest",
 	"download_media",
 	"edit_message",
+	"extract_image_text",
 	"get_blocklist",
 	"get_chat",
 	"get_chat_labels",
@@ -130,7 +131,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 
 func TestNewServer_ToolCount(t *testing.T) {
 	s := NewServer(nil, nil, true)
-	const want = 50
+	const want = 51
 	if got := len(s.MCP().ListTools()); got != want {
 		t.Errorf("tool count = %d, want %d", got, want)
 	}
@@ -143,8 +144,8 @@ func TestNewServer_LabelsDisabledDoesNotAdvertiseLabelTools(t *testing.T) {
 			t.Errorf("label tool %q is advertised while labels are disabled", name)
 		}
 	}
-	if got := len(s.MCP().ListTools()); got != 46 {
-		t.Fatalf("default tool count = %d, want 45", got)
+	if got := len(s.MCP().ListTools()); got != 47 {
+		t.Fatalf("default tool count = %d, want 47", got)
 	}
 }
 
@@ -168,7 +169,7 @@ func TestToolsByDomain(t *testing.T) {
 		"tools_media.go":      {"send_poll", "send_contact_card"},
 		"tools_labels.go":     {"list_labels"},
 		"tools_privacy.go":    {"get_blocklist", "send_presence"},
-		"tools_transcribe.go": {"transcribe_audio"},
+		"tools_transcribe.go": {"transcribe_audio", "extract_image_text"},
 	}
 
 	for file, names := range domains {
@@ -183,6 +184,7 @@ func TestToolsByDomain(t *testing.T) {
 var expectedReadOnlyTools = map[string]bool{
 	"digest":               true,
 	"download_media":       true,
+	"extract_image_text":   true,
 	"get_blocklist":        true,
 	"get_chat":             true,
 	"get_chat_labels":      true,

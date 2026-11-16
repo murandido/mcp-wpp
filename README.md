@@ -24,7 +24,7 @@ Your WhatsApp history is some of the most personal data you have. Connecting it 
 | A message forges other messages, or a pairing QR leaks to the model | Message bodies cannot start new lines that look like headers, results are labelled as third-party data, and pairing never goes through MCP. |
 | Runaway sends get the number banned | Daemon-side rate limits that clients cannot bypass. |
 
-Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, pairing by phone-number code, optional retention, local voice-note transcription, and a small default tool surface (12 read-only tools out of 49).
+Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, pairing by phone-number code, optional retention, voice-note transcription, local OCR of images, and a small default tool surface (13 read-only tools out of 51).
 
 ## Quick start
 
@@ -408,6 +408,12 @@ WPP_MCP_ALERT_HEADER="Authorization: Bearer tk_..." wpp-mcp serve -alert-url htt
 
 Treat the alert URL and header as secrets; they are never logged. The Docker health check (`wpp-mcp healthcheck`, which probes `/readyz`) needs no change.
 
+## Text in images
+
+`serve -ocr` (`WPP_MCP_OCR=1`) enables the read-only `extract_image_text` tool, which reads the text in an image message, or in a document that is a PNG, JPEG or WebP image, with a local [Tesseract](https://github.com/tesseract-ocr/tesseract). Nothing leaves the machine: the image is downloaded through the usual media path, decrypted in memory and piped to `tesseract stdin stdout -l <langs>`, so no plaintext file is written. Each run has a 30 s timeout, a 20 MB image limit and a bounded output, and at most two run at once. The text is cached in the encrypted database (once per message) and removed with the message by retention. Like every result that carries message content, it is labelled as third-party data.
+
+The Docker image includes Tesseract with Portuguese and English data. Natively, install `tesseract` and the language data for `-ocr-langs` (default `por+eng`): `dnf install tesseract tesseract-langpack-por`, `apt install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng` or `brew install tesseract tesseract-lang`. If `-ocr` is set but the binary is missing, `serve` logs a warning and the tool reports OCR as unavailable.
+
 ## Configuration
 
 Global flags go before the command: `wpp-mcp -store DIR serve -write`.
@@ -435,6 +441,8 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -audit-days` | `WPP_MCP_AUDIT_DAYS` | 90 | Keep the audit log N days; 0 disables auditing |
 | `serve -enable-labels` | `WPP_MCP_LABELS` | off | WhatsApp Business label sync and tools |
 | `serve -full-history` | `WPP_MCP_FULL_HISTORY` | off | Ask for a full history sync when pairing |
+| `serve -ocr` | `WPP_MCP_OCR` | off | Extract text from images with the local `tesseract` binary (see [Text in images](#text-in-images)) |
+| `serve -ocr-langs` | `WPP_MCP_OCR_LANGS` | `por+eng` | Tesseract languages joined by `+`; their language data must be installed |
 | `serve -webhook-url` | `WPP_MCP_WEBHOOK_URL` | | POST live incoming messages from allowed chats here (see [Catching up and webhooks](#catching-up-and-webhooks)) |
 | `serve -webhook-secret` | `WPP_MCP_WEBHOOK_SECRET` | | HMAC-SHA256 signing secret, required with a URL |
 | `serve -webhook-include-text` | `WPP_MCP_WEBHOOK_INCLUDE_TEXT` | off | Include message text and captions: they leave the machine |

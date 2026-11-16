@@ -22,6 +22,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/murandido/mcp-wpp/internal/crypto"
+	"github.com/murandido/mcp-wpp/internal/ocr"
 	"github.com/murandido/mcp-wpp/internal/ratelimit"
 	"github.com/murandido/mcp-wpp/internal/security"
 	"github.com/murandido/mcp-wpp/internal/store"
@@ -48,6 +49,8 @@ type Config struct {
 	// Keys.WhatsApp and cached media is sealed with Keys.Media. Nil keeps
 	// both in the clear.
 	Keys *crypto.Keys
+	// OCR extracts text from images locally (see ocr.go). Nil disables it.
+	OCR *ocr.Engine
 }
 
 // Client wraps a whatsmeow.Client together with the message cache and logger.
@@ -82,6 +85,8 @@ type Client struct {
 	transcribeCfg transcribe.Config
 	transcribeFn  func(ctx context.Context, cfg transcribe.Config, audio []byte, filename, language string) (transcribe.Result, error)
 	transcribeMu  sync.Mutex
+	// ocr runs local Tesseract OCR on images (see ocr.go); nil is disabled.
+	ocr *ocr.Engine
 	// isConnected and waSend are wa's IsConnected and SendMessage, used by
 	// SendReply, SendReaction, polls and contact cards (waSend through the
 	// rate-limited sendMessage); tests replace them.
@@ -213,6 +218,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		labelsEnabled:    cfg.LabelsEnabled,
 		status:           ConnectionStatus{State: "disconnected", Since: time.Now().UTC()},
 		transcribeCfg:    transcribe.ConfigFromEnv(),
+		ocr:              cfg.OCR,
 	}
 	c.bindWA(wa)
 	return c, nil

@@ -14,7 +14,7 @@ type PurgedMessage struct {
 }
 
 // PurgeBefore deletes messages older than cutoff together with their
-// transcripts and poll votes, in one transaction. The FTS index follows
+// transcripts, OCR text and poll votes, in one transaction. The FTS index follows
 // through its delete trigger. Chats stay, so access decisions survive.
 func (s *Store) PurgeBefore(ctx context.Context, cutoff time.Time) ([]PurgedMessage, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -45,6 +45,7 @@ func (s *Store) PurgeBefore(ctx context.Context, cutoff time.Time) ([]PurgedMess
 	}
 	for _, q := range []string{
 		"DELETE FROM transcripts WHERE (message_id, chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
+		"DELETE FROM image_texts WHERE (message_id, chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
 		"DELETE FROM poll_votes WHERE (poll_message_id, poll_chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
 		"DELETE FROM messages WHERE timestamp < ?",
 	} {

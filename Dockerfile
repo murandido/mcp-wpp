@@ -15,8 +15,15 @@ RUN make build VERSION=${VERSION}
 
 # ---- test: the full suite against SQLCipher (make container-test) ---------
 FROM build AS test
-# The image ships Debian's SQLCipher, which has FTS5: require it here.
-ENV WPP_MCP_REQUIRE_FTS5=1
+ARG DEBIAN_FRONTEND=noninteractive
+# The OCR tests run the real tesseract here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-por \
+    && rm -rf /var/lib/apt/lists/*
+# The image ships Debian's SQLCipher, which has FTS5, and Tesseract: require
+# both here.
+ENV WPP_MCP_REQUIRE_FTS5=1 \
+    WPP_MCP_REQUIRE_TESSERACT=1
 RUN make vet fmt test smoke e2e
 
 # ---- runtime ---------------------------------------------------------------
@@ -24,11 +31,13 @@ FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d054
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ffmpeg is only needed by send_audio_message for non-Opus input; build with
-# --build-arg WITH_FFMPEG=1 to include it.
+# --build-arg WITH_FFMPEG=1 to include it. Tesseract (Portuguese and English)
+# serves extract_image_text when the daemon runs with -ocr.
 ARG WITH_FFMPEG=0
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends ca-certificates libsqlcipher1 \
+       tesseract-ocr tesseract-ocr-eng tesseract-ocr-por \
     && if [ "$WITH_FFMPEG" = "1" ]; then apt-get install -y --no-install-recommends ffmpeg; fi \
     && rm -rf /var/lib/apt/lists/*
 

@@ -52,6 +52,7 @@ var toolAccessScope = map[string]accessScope{
 	"download_media":            chatArg("chat_jid"),
 	"request_sync":              chatArg("chat_jid"),
 	"transcribe_audio":          chatArg("chat_jid"),
+	"extract_image_text":        chatArg("chat_jid"),
 	"get_poll_results":          chatArg("chat_jid"),
 	"send_message":              chatArg("recipient"),
 	"schedule_message":          chatArg("recipient"),
