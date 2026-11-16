@@ -58,6 +58,10 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 			markAudit(ctx, auditDenied)
 			return chatNotFound(ref), nil
 		}
+		if reason := s.ownChatBlocked(ref); reason != "" {
+			markAudit(ctx, auditDenied)
+			return mcp.NewToolResultError(reason), nil
+		}
 		policy, err := s.sendPolicyFor(ctx, ref)
 		if err != nil {
 			return mcp.NewToolResultError("cannot read the send policy: " + err.Error()), nil

@@ -37,11 +37,12 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		retainDays    int
 		timezone      = os.Getenv("WPP_MCP_TIMEZONE")
 		confirmSends  = true
+		selfApprove   bool
 	)
 	for _, b := range []struct {
 		env string
 		dst *bool
-	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}, {"WPP_MCP_CONFIRM_SENDS", &confirmSends}} {
+	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}, {"WPP_MCP_CONFIRM_SENDS", &confirmSends}, {"WPP_MCP_SELF_APPROVE", &selfApprove}} {
 		if value := os.Getenv(b.env); value != "" {
 			v, err := strconv.ParseBool(value)
 			if err != nil {
@@ -90,6 +91,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
 	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, the default send policy for chats without one: proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately. Per chat: wpp-mcp access send (env WPP_MCP_CONFIRM_SENDS)")
+	fs.BoolVar(&selfApprove, "self-approve", selfApprove, "with -write, approve outbox proposals by typing `approve <id>`, `reject <id>` or `outbox` into your own WhatsApp chat from your phone; MCP tools then cannot write to that chat (env WPP_MCP_SELF_APPROVE)")
 	fs.StringVar(&timezone, "timezone", timezone, "IANA time zone per-chat send windows are read in, e.g. America/Sao_Paulo (default the system zone; env WPP_MCP_TIMEZONE)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
 	auditDays, auditErr := registerAuditDays(fs)
@@ -125,6 +127,10 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fullHistory, fullHistoryErr := resolveFullHistory(fs, *fullHistoryFlag, os.Getenv)
 	if fullHistoryErr != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", fullHistoryErr)
+		return 2
+	}
+	if selfApprove && !write {
+		fmt.Fprintln(os.Stderr, "-self-approve needs -write")
 		return 2
 	}
 	if maxPerHour < 1 {
@@ -304,6 +310,13 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		// Scheduled messages are sent only in write mode; read-only
 		// daemons leave them queued.
 		go mcpServer.RunScheduler(ctx, mcpsrv.SchedulerInterval)
+	}
+	if selfApprove {
+		mcpServer.EnableSelfApprove()
+		c.OnSelfCommand(func(cmd client.SelfCommand) {
+			go mcpServer.RunSelfCommand(ctx, cmd)
+		})
+		fmt.Fprintln(os.Stderr, "self-approve: proposals can be approved from your own WhatsApp chat (`outbox`, `approve <id>`, `reject <id>`), typed on another device than this one; MCP tools cannot write to that chat")
 	}
 	if retainDays > 0 {
 		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)

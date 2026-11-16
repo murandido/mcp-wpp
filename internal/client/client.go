@@ -94,6 +94,9 @@ type Client struct {
 	waSend      func(context.Context, types.JID, *waProto.Message, ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
 	// incomingHook receives live incoming messages (see incoming.go).
 	incomingHook func(IncomingMessage)
+	// selfHook receives self-chat commands (see selfchat.go).
+	selfHookMu sync.RWMutex
+	selfHook   func(SelfCommand)
 }
 
 // newWAClient creates the whatsmeow client for device. whatsmeow logs through

@@ -96,3 +96,13 @@ func TestLoadTimezone(t *testing.T) {
 		t.Fatal("unknown zone accepted")
 	}
 }
+
+func TestRunServe_SelfApproveNeedsWrite(t *testing.T) {
+	t.Setenv("WPP_MCP_WRITE", "")
+	if code := runServe(t.TempDir(), &security.Redactor{}, []string{"-self-approve"}); code != 2 {
+		t.Fatalf("-self-approve without -write: exit %d, want 2", code)
+	}
+	if code := runServe(t.TempDir(), &security.Redactor{}, []string{"-timezone", "Mars/Olympus"}); code != 2 {
+		t.Fatalf("unknown -timezone: exit %d, want 2", code)
+	}
+}

@@ -37,6 +37,11 @@ type Server struct {
 	schedWake chan struct{}
 	// loc is the time zone send windows are read in; nil means time.Local.
 	loc *time.Location
+	// selfApprove: proposals may be approved from the self chat, and write
+	// tools may not target it (selfapprove.go).
+	selfApprove bool
+	// ownChats replaces client.OwnChatJIDs in tests.
+	ownChats func() []string
 }
 
 // NewServer constructs an MCP server with all tools registered against the

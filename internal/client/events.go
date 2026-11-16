@@ -205,6 +205,10 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
+	// A command typed into the account's own chat from the phone
+	// (serve -self-approve); it is cached like any other message.
+	c.notifySelfCommand(msg)
+
 	pollOptions := applyPollCreation(&nm, msg.Message)
 
 	if nm.msg.Content == "" && nm.msg.MediaType == "" {

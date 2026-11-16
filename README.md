@@ -199,6 +199,18 @@ Proposals expire after 15 minutes. Read receipts, typing and presence skip the q
 
 Each proposal and scheduled message records who created it: `operator` (the operator token, which the stdio bridge also uses), `token:<name>` for a client token, or `operator:cli` for your own `wpp-mcp schedule`. `wpp-mcp outbox` and the `/outbox` page show it, and the audit entry of an approval names it. When a client token is revoked (directly, or with its OAuth grant), whatever it proposed or scheduled is refused when you approve it or when it comes due, and recorded as `failed`; nothing is swept at revocation time, so the check also covers tokens revoked by any other path.
 
+### Approving from your phone
+
+With `-self-approve` (`WPP_MCP_SELF_APPROVE=1`, needs `-write`), you can decide proposals in your own WhatsApp chat ("Message yourself"), typed on your phone or another linked device:
+
+```text
+outbox          list what awaits approval
+approve 7       the same as `wpp-mcp outbox approve 7`
+reject 7        the same as `wpp-mcp outbox reject 7`
+```
+
+The daemon replies in the same chat with the id and the outcome. Approval takes exactly the path of `wpp-mcp outbox approve`: access and send policy are checked again, and each proposal is claimed once. A message counts as a command only if it is live (not history sync), in your own chat, written by you, from a device other than the daemon's own linked device, and at most five minutes old. The device check is the key protection: nothing the daemon sends, including messages an AI asked it to send, can approve anything. Other text in that chat is ignored, so notes to self keep working. While `-self-approve` is on, MCP tools may not write to your own chat at all. Every decision is in the audit log as actor `operator:whatsapp`, with the proposal id and creator but no text. Replies count against `-max-sends-per-hour`.
+
 ### Send policy per chat
 
 Each chat has a send policy, separate from whether the AI can see it:
@@ -447,6 +459,7 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
+| `serve -self-approve` | `WPP_MCP_SELF_APPROVE` | off | With `-write`, decide proposals from your own WhatsApp chat (see [Approving from your phone](#approving-from-your-phone)) |
 | `serve -timezone` | `WPP_MCP_TIMEZONE` | system zone | IANA time zone that per-chat send windows are read in (`wpp-mcp access window`) |
 | `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, the default send policy for chats without one: `confirm` (on) or `direct` (off); see `wpp-mcp access send` |
 | `serve -tools` | `WPP_MCP_TOOLS` | `default` | Groups or tool names: `core`, `access`, `messaging`, `transcribe`, `labels`, `contacts`, `groups`, `privacy`, `polls`, `all` |

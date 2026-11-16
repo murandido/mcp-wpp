@@ -90,6 +90,9 @@ func (s *Server) writeBlocked(ctx context.Context, tool string, args map[string]
 	if !s.allowedChat(ctx, ref) {
 		return toolText(chatNotFound(ref))
 	}
+	if reason := s.ownChatBlocked(ref); reason != "" {
+		return reason
+	}
 	policy, err := s.sendPolicyFor(ctx, ref)
 	if err != nil {
 		return "cannot read the send policy: " + err.Error()
