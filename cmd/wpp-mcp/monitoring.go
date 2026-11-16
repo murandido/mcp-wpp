@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/murandido/mcp-wpp/internal/alert"
 	"github.com/murandido/mcp-wpp/internal/client"
+	"github.com/murandido/mcp-wpp/internal/daemon"
 	"github.com/murandido/mcp-wpp/internal/metrics"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
@@ -74,6 +76,8 @@ func (m *monitoringFlags) validate() error {
 // operations is the metrics endpoint and the session alerter of one serve run.
 type operations struct {
 	toolCalls *metrics.LabeledCounter
+	denied    *metrics.LabeledCounter
+	refusals  *metrics.LabeledCounter
 	source    *metrics.Source
 }
 
@@ -81,14 +85,9 @@ type operations struct {
 // metrics source. Call mount from daemon.Config.AdminMount and pass
 // observeTool to the MCP server.
 func (m *monitoringFlags) startOperations(ctx context.Context, c *client.Client, st *store.Store) (*operations, error) {
-	ops := &operations{toolCalls: metrics.NewLabeledCounter("tool", "outcome")}
-	ops.source = &metrics.Source{
-		Version:   Version,
-		Start:     time.Now(),
-		Stats:     c.Stats,
-		Counts:    st.Counts,
-		ToolCalls: ops.toolCalls,
-	}
+	ops := newOperations()
+	ops.source.Stats = c.Stats
+	ops.source.Counts = st.Counts
 	if m.alertURL == "" {
 		return ops, nil
 	}
@@ -120,3 +119,43 @@ func (o *operations) mount(mux *http.ServeMux) {
 }
 
 func (o *operations) observeTool(tool, outcome string) { o.toolCalls.Inc(tool, outcome) }
+
+// newOperations returns the counters and a metrics source without the
+// client and store callbacks.
+func newOperations() *operations {
+	o := &operations{
+		toolCalls: metrics.NewLabeledCounter("tool", "outcome"),
+		denied:    metrics.NewLabeledCounter("tool"),
+		refusals:  metrics.NewLabeledCounter("code", "route"),
+	}
+	o.source = &metrics.Source{
+		Version:      Version,
+		Start:        time.Now(),
+		ToolCalls:    o.toolCalls,
+		Denied:       o.denied,
+		HTTPRefusals: o.refusals,
+	}
+	return o
+}
+
+// observeDenied counts a refused tool call. Tool names are a registered set.
+func (o *operations) observeDenied(tool string) { o.denied.Inc(tool) }
+
+// observeRefusal counts a refused HTTP request. The daemon reports codes and
+// route classes from fixed sets; anything else is folded into "other" so a
+// label can never carry request data.
+func (o *operations) observeRefusal(code int, route string) {
+	c := "other"
+	for _, known := range daemon.RefusalCodes {
+		if code == known {
+			c = strconv.Itoa(code)
+		}
+	}
+	r := daemon.RouteUnknown
+	for _, known := range daemon.RouteClasses {
+		if route == known {
+			r = route
+		}
+	}
+	o.refusals.Inc(c, r)
+}

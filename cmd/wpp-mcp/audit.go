@@ -23,14 +23,16 @@ Usage:
   wpp-mcp audit [-since 24h] [-actor NAME] [-chat JID] [-limit N]
 
   -since D    only entries newer than D (Go duration or days, e.g. 90m, 24h, 7d; default 24h)
-  -actor A    operator, a token name, or token:<name>
+  -actor A    operator, operator:cli, a token name, or token:<name>
   -chat J     only entries that targeted this chat JID
   -limit N    at most N entries, newest first (default 100, max 1000)
 
 Each MCP tool call and resource read records the actor, the tool, the chat
 it targeted, the outcome (ok, error, denied, proposed) and its duration;
 never arguments, message text or results. Operator actions on the admin API
-and pages are recorded too. Entries older than serve's -audit-days (default
+and pages are recorded too, and so are the same changes made by access,
+schedule, token, oauth revoke and login without a running daemon (actor operator:cli,
+the same action and fields). Entries older than serve's -audit-days (default
 90) are deleted. Works with or without a running daemon.
 `
 
@@ -184,22 +186,10 @@ type directAdmin struct {
 	release func()
 }
 
-// record logs an operator action taken without the daemon (which would
-// otherwise have recorded it on its admin API).
-func (d *directAdmin) record(ctx context.Context, action, detail string, failed bool) {
-	if !auditEnabled() {
-		return
-	}
-	outcome := store.OutcomeOK
-	if failed {
-		outcome = store.OutcomeError
-	}
-	_ = d.st.RecordAudit(ctx, store.AuditEntry{Actor: "operator", Kind: store.AuditAdmin, Action: action, Detail: detail + " via=cli", Outcome: outcome})
-}
-
 func (d *directAdmin) createToken(ctx context.Context, in store.NewAPIToken) (store.APIToken, string, error) {
+	start := time.Now()
 	t, plain, err := d.st.CreateAPIToken(ctx, in)
-	d.record(ctx, "token create", fmt.Sprintf("name=%s scopes=%s chats=%s", in.Name, strings.Join(in.Scopes, ","), strings.Join(in.Chats, ",")), err != nil)
+	cliAudit(ctx, d.st, start, routeClientCreate, nil, in, err)
 	return t, plain, err
 }
 
@@ -217,8 +207,9 @@ func (d *directAdmin) listTokens(ctx context.Context) ([]tokenRow, error) {
 }
 
 func (d *directAdmin) revokeToken(ctx context.Context, ref string) (store.APIToken, error) {
+	start := time.Now()
 	t, err := d.st.RevokeAPIToken(ctx, ref)
-	d.record(ctx, "token revoke", "ref="+ref, err != nil)
+	cliAudit(ctx, d.st, start, routeClientRevoke, idPath("ref", ref), nil, err)
 	return t, err
 }
 

@@ -47,6 +47,27 @@ The container runs as your user (`WPP_UID`/`WPP_GID`, default 1000) with a read-
 
 To update, `docker compose pull && docker compose up -d`. Pin a release with `WPP_MCP_TAG=0.1.0` instead of `latest`. To build from source instead, run `WPP_MCP_VERSION=$(git describe --tags --always) docker compose build`, so `wpp-mcp -version` reports what you built.
 
+#### Verify the image
+
+Release images (from the release after 0.9.0 on) are signed with [cosign](https://github.com/sigstore/cosign) keyless signing: the certificate names this repository's release workflow and the tag it ran for, and the signature is logged in the public Rekor transparency log. There is no key to distribute. With cosign 3 or newer:
+
+```bash
+cosign verify ghcr.io/murandido/mcp-wpp:<version> \
+  --certificate-identity-regexp '^https://github\.com/murandido/mcp-wpp/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The index and each platform image are signed. Each platform image also carries an SPDX SBOM attestation, verified against its digest (listed by `docker buildx imagetools inspect ghcr.io/murandido/mcp-wpp:<version>`):
+
+```bash
+cosign verify-attestation --type spdxjson \
+  --certificate-identity-regexp '^https://github\.com/murandido/mcp-wpp/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/murandido/mcp-wpp@sha256:<platform digest>
+```
+
+To be sure you run what you verified, pin the digest in `compose.yaml` (`image: ghcr.io/murandido/mcp-wpp@sha256:...`) rather than a tag.
+
 ### Native (Linux, macOS)
 
 Requirements: Go 1.26+, a C toolchain, and SQLCipher (`dnf install sqlcipher-devel`, `apt install libsqlcipher-dev` or `brew install sqlcipher`).
@@ -100,7 +121,7 @@ wpp-mcp token revoke claude-ai                      # refused from the next requ
 
 The token (`wppmcp_` and 64 hex characters) is printed once and only its SHA-256 is stored. Client tokens work on `/mcp` only. `-chats` narrows what the token sees to those chats, and only when the access policy allows them as well; other chats look nonexistent to it. A `read` token gets an error from every tool that sends or changes the account. With `send`, writes still go through `-write`, the outbox approval and the access policy. Unknown, revoked and expired tokens all get the same 401. The operator token keeps full access. It is the only one accepted on `/admin/*` and for browser login, and the local CLI and `wpp-mcp stdio` use it.
 
-`wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`.
+`wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`. Operator changes made without a running daemon (`wpp-mcp access`, `schedule`, `token`, `oauth revoke`, `login`, which then edit the store directly) are recorded too, with the actor `operator:cli` and the same action and fields the admin API would record.
 
 ### Connect with OAuth
 
@@ -397,6 +418,8 @@ docker compose up -d
 | `wpp_mcp_messages_received_total`, `wpp_mcp_messages_sent_total` | Live messages in and out since start |
 | `wpp_mcp_seconds_since_last_message_received` | Present once a message has arrived since start |
 | `wpp_mcp_tool_calls_total{tool,outcome}` | MCP tool executions, `ok` or `error` (calls refused by the access policy or held as proposals are not executions) |
+| `wpp_mcp_tool_calls_denied_total{tool}` | Tool calls and media resource reads (`tool="resource:whatsapp://media/"`) refused by a token's scope or chat set, the access policy or a `none` send policy, counted even with `-audit-days 0` |
+| `wpp_mcp_http_refusals_total{code,route}` | Refused HTTP requests: `code` is `401` (authentication), `403` (Host/Origin guard, CSRF) or `429` (rate limits); `route` is `mcp`, `admin`, `oauth`, `ui_login`, `probe`, `page` or `other` |
 | `wpp_mcp_outbox_pending`, `wpp_mcp_access_requests_pending` | Waiting for your decision |
 | `wpp_mcp_chats_cached`, `wpp_mcp_chats_visible` | Chats in the cache, and those the access policy shows |
 | `wpp_mcp_alerts_total{event,result}` | Session alert deliveries (with `-alert-url`) |
@@ -457,6 +480,8 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -oauth` | `WPP_MCP_OAUTH` | off | Serve an OAuth 2.1 authorization server for remote connectors (see [Connect with OAuth](#connect-with-oauth)) |
 | `serve -public-url` | `WPP_MCP_PUBLIC_URL` | | Public `https://host` of the daemon, required with `-oauth`; the issuer, with the resource at `/mcp` |
 | `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
+| `serve -mcp-rate` | `WPP_MCP_RATE` | 120 | `/mcp` requests per minute per client token (token bucket, burst of half that); the operator token is exempt; over it, 429 with `Retry-After` and a JSON-RPC error body; 0 disables |
+| `serve -auth-fail-limit` | `WPP_MCP_AUTH_FAIL_LIMIT` | 20 | Rejected bearer credentials per client IP per minute before a 5-minute lock-out, during which every authenticated route answers 429 before checking the token; requests without credentials are not counted; 0 disables |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
 | `serve -self-approve` | `WPP_MCP_SELF_APPROVE` | off | With `-write`, decide proposals from your own WhatsApp chat (see [Approving from your phone](#approving-from-your-phone)) |
@@ -502,6 +527,7 @@ make build          # needs SQLCipher; see Native above
 make lint test e2e smoke
 make container-test # the full suite in Debian with SQLCipher, no local install needed
 make docs           # regenerate docs/tools.md
+make fuzz           # every fuzz target for 20s (FUZZTIME=5m for longer); CI fuzzes weekly
 ```
 
 Tests never touch a real WhatsApp account. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).

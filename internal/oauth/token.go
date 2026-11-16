@@ -123,7 +123,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, f map[stri
 	if !found || !now.Before(c.Expires) ||
 		subtle.ConstantTimeCompare([]byte(f["client_id"]), []byte(c.ClientID)) != 1 ||
 		f["redirect_uri"] != c.RedirectURI ||
-		subtle.ConstantTimeCompare([]byte(pkceS256(verifier)), []byte(c.Challenge)) != 1 {
+		!pkceMatches(verifier, c.Challenge) {
 		oauthError(w, http.StatusBadRequest, "invalid_grant", "invalid authorization code")
 		return
 	}

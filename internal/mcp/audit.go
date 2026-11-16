@@ -64,17 +64,21 @@ func (s *Server) record(ctx context.Context, e store.AuditEntry) {
 }
 
 // auditMiddleware is the outermost tool middleware: it sees every call,
-// including those the scope and access checks refuse. It records the tool,
+// including those the scope and access checks refuse, and reports refused
+// ones to the ObserveDenied hook even when auditing is off. It records the tool,
 // the chat named by the tool's toolAccessScope argument, the outcome and the
 // duration; never other arguments, message text or results.
 func (s *Server) auditMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if s.auditor == nil {
-			return next(ctx, req)
-		}
 		start := time.Now()
 		ctx, note := withAuditNote(ctx)
 		res, err := next(ctx, req)
+		if note.outcome == auditDenied && s.onDenied != nil {
+			s.onDenied(req.Params.Name)
+		}
+		if s.auditor == nil {
+			return res, err
+		}
 		var chat string
 		if scope := toolAccessScope[req.Params.Name]; scope.chatArg != "" {
 			chat = s.auditChat(req.GetString(scope.chatArg, ""))
@@ -104,12 +108,15 @@ func (s *Server) auditChat(ref string) string {
 // auditResourceMiddleware records resource reads the same way.
 func (s *Server) auditResourceMiddleware(next server.ResourceHandlerFunc) server.ResourceHandlerFunc {
 	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		if s.auditor == nil {
-			return next(ctx, req)
-		}
 		start := time.Now()
 		ctx, note := withAuditNote(ctx)
 		out, err := next(ctx, req)
+		if note.outcome == auditDenied && s.onDenied != nil {
+			s.onDenied(mediaResourceAction)
+		}
+		if s.auditor == nil {
+			return out, err
+		}
 		chat, _, _ := parseMediaURI(req.Params.URI)
 		e := auditEntry(ctx, store.AuditResource, mediaResourceAction, s.auditChat(chat), start)
 		switch {

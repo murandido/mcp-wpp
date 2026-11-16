@@ -29,6 +29,11 @@ type Source struct {
 	// Alerts counts session alert deliveries by event and result; nil when
 	// alerts are off.
 	Alerts *LabeledCounter
+	// Denied counts refused MCP tool calls and resource reads by tool.
+	Denied *LabeledCounter
+	// HTTPRefusals counts 401, 403 and 429 responses by code and route
+	// class.
+	HTTPRefusals *LabeledCounter
 }
 
 // Collect writes every metric family.
@@ -69,6 +74,12 @@ func (s *Source) Collect(ctx context.Context, w *Writer) {
 
 	if s.ToolCalls != nil {
 		w.Family("wpp_mcp_tool_calls_total", "MCP tool executions by tool and outcome (ok or error).", "counter", s.ToolCalls.Samples()...)
+	}
+	if s.Denied != nil {
+		w.Family("wpp_mcp_tool_calls_denied_total", "MCP tool calls and resource reads refused by token scope, access policy or send policy, by tool.", "counter", s.Denied.Samples()...)
+	}
+	if s.HTTPRefusals != nil {
+		w.Family("wpp_mcp_http_refusals_total", "HTTP requests refused: 401 authentication, 403 Host/Origin guard or CSRF, 429 rate limits; by code and route class.", "counter", s.HTTPRefusals.Samples()...)
 	}
 	if s.Alerts != nil {
 		w.Family("wpp_mcp_alerts_total", "Session alert deliveries by event and result.", "counter", s.Alerts.Samples()...)

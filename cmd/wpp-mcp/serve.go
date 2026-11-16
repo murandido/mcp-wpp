@@ -100,6 +100,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		return 2
 	}
 	monitoring := registerMonitoringFlags(fs)
+	httpLimits, err := registerHTTPLimitFlags(fs, os.Getenv)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
 	oauthCfg, err := registerOAuthFlags(fs, os.Getenv)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
@@ -109,6 +114,10 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		return 2
 	}
 	if err := oauthCfg.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
+	if err := httpLimits.validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
@@ -252,7 +261,9 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		Access:        st,
 		Tokens:        st,
 		AdminMount:    ops.mount,
+		Refused:       ops.observeRefusal,
 	}
+	httpLimits.apply(&dcfg)
 	var auditor mcpsrv.Auditor
 	if *auditDays > 0 {
 		dcfg.Audit, auditor = st, st
@@ -301,6 +312,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintln(os.Stderr, "WhatsApp Business label sync and tools are enabled")
 	}
 	mcpServer.ObserveToolCalls(ops.observeTool)
+	mcpServer.ObserveDenied(ops.observeDenied)
 	d.SetMCPMount(mcpServer.AttachHTTP)
 	if write {
 		// Per-chat send policies can ask for confirmation even when the

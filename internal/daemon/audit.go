@@ -91,15 +91,15 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 			return // no route matched
 		}
 		id := auth.Caller(r.Context())
-		e := store.AuditEntry{
-			At:       start.UTC(),
-			Actor:    id.Actor(),
-			TokenID:  id.TokenID,
-			Kind:     store.AuditAdmin,
-			Action:   r.Pattern,
-			Duration: time.Since(start).Milliseconds(),
-			Outcome:  store.OutcomeOK,
+		var path [][2]string
+		for _, m := range patternWildcard.FindAllStringSubmatch(r.Pattern, -1) {
+			path = append(path, [2]string{m[1], r.PathValue(m[1])})
 		}
+		e, detail := adminAuditEntry(r.Pattern, path, fields)
+		e.At = start.UTC()
+		e.Actor = id.Actor()
+		e.TokenID = id.TokenID
+		e.Duration = time.Since(start).Milliseconds()
 		var chats []string
 		for _, k := range auditChatFields {
 			if vs := nonEmpty(fields[k]); len(vs) > 0 {
@@ -109,22 +109,6 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 		}
 		if len(chats) > maxAuditChats {
 			chats = chats[:maxAuditChats]
-		}
-		var detail []string
-		for _, m := range patternWildcard.FindAllStringSubmatch(r.Pattern, -1) {
-			if v := r.PathValue(m[1]); v != "" {
-				detail = append(detail, m[1]+"="+v)
-			}
-		}
-		keys := make([]string, 0, len(fields))
-		for k := range fields {
-			if auditDetailFields[k] {
-				keys = append(keys, k)
-			}
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			detail = append(detail, k+"="+strings.Join(fields[k], ","))
 		}
 		if len(chats) > 1 {
 			detail = append(detail, fmt.Sprintf("batch=%d", len(chats)))
@@ -182,6 +166,46 @@ func addAuditDetail(ctx context.Context, kv string) {
 	}
 }
 
+// AdminAuditEntry returns the entry auditAdmin records for an operator
+// request to the route pattern action, given the route's path values (name,
+// value pairs in pattern order) and the request fields: the chat from
+// auditChatFields and a detail made only of path values and
+// auditDetailFields. Commands that change the store without a daemon use it
+// so the log reads the same either way. The caller sets Actor and, on
+// failure, Outcome (it defaults to ok).
+func AdminAuditEntry(action string, path [][2]string, fields url.Values) store.AuditEntry {
+	e, detail := adminAuditEntry(action, path, fields)
+	e.Detail = strings.Join(detail, " ")
+	return e
+}
+
+func adminAuditEntry(action string, path [][2]string, fields url.Values) (store.AuditEntry, []string) {
+	e := store.AuditEntry{Kind: store.AuditAdmin, Action: action, Outcome: store.OutcomeOK}
+	for _, k := range auditChatFields {
+		if v := fields.Get(k); v != "" {
+			e.ChatJID = v
+			break
+		}
+	}
+	var detail []string
+	for _, p := range path {
+		if p[1] != "" {
+			detail = append(detail, p[0]+"="+p[1])
+		}
+	}
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		if auditDetailFields[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		detail = append(detail, k+"="+strings.Join(fields[k], ","))
+	}
+	return e, detail
+}
+
 // peekFields reads the request's JSON or form fields without consuming the
 // body for the handler.
 func peekFields(r *http.Request) url.Values {
@@ -207,6 +231,21 @@ func peekFields(r *http.Request) url.Values {
 		}
 		return out
 	}
+	return jsonFields(buf)
+}
+
+// AuditFields returns the request fields auditAdmin would see if body were
+// sent as the JSON body of an admin request.
+func AuditFields(body any) url.Values {
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return url.Values{}
+	}
+	return jsonFields(buf)
+}
+
+func jsonFields(buf []byte) url.Values {
+	out := url.Values{}
 	var m map[string]any
 	if json.Unmarshal(buf, &m) != nil {
 		return out
