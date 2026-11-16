@@ -35,7 +35,8 @@ func startServe(t *testing.T, bin, store string, global []string, serveArgs ...s
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
-	deadline := time.Now().Add(10 * time.Second)
+	// Generous: CI runners and the container stage can be slow to start.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-exited:
