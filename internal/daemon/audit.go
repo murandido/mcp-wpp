@@ -32,6 +32,7 @@ var auditChatFields = []string{"jid", "chat_jid"}
 var auditDetailFields = map[string]bool{
 	"mode": true, "state": true, "decision": true, "approve": true,
 	"name": true, "scopes": true, "chats": true, "expires_at": true,
+	"code": true, "days": true,
 }
 
 // maxAuditPeek bounds how much of a request body is inspected.

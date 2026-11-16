@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/murandido/mcp-wpp/internal/oauth"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
 
@@ -151,6 +152,8 @@ type adminBackend interface {
 	listTokens(ctx context.Context) ([]tokenRow, error)
 	revokeToken(ctx context.Context, ref string) (store.APIToken, error)
 	audit(ctx context.Context, f store.AuditFilter) ([]store.AuditEntry, error)
+	listGrants(ctx context.Context) ([]oauth.GrantView, error)
+	revokeGrant(ctx context.Context, id string) (store.OAuthGrant, error)
 	close()
 }
 

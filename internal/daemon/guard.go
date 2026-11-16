@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/murandido/mcp-wpp/internal/auth"
+	"github.com/murandido/mcp-wpp/internal/oauth"
 )
 
 // Request guards, applied to every request in this order:
@@ -21,8 +23,9 @@ import (
 //     or an operator-allowed host. This defeats DNS rebinding: a hostile page
 //     can resolve its own domain to 127.0.0.1, but the browser still sends
 //     that domain in Host and Origin.
-//  2. authGuard fails closed. Only the probes and the one-time UI login are
-//     public. /admin/* accepts the operator bearer token only; /mcp accepts
+//  2. authGuard fails closed. Only the probes, the one-time UI login and
+//     the OAuth endpoints (metadata, register, authorize, token, revoke)
+//     are public. /admin/* accepts the operator bearer token only; /mcp accepts
 //     it or a client API token (wpp-mcp token); browser pages accept the
 //     operator bearer token or a session cookie minted by /ui/login. The
 //     caller's auth.Identity travels on the request context.
@@ -95,7 +98,7 @@ const (
 
 func classify(path string) pathClass {
 	switch {
-	case path == "/healthz", path == "/readyz", path == loginPath:
+	case path == "/healthz", path == "/readyz", path == loginPath, oauth.IsPublicPath(path):
 		return classPublic
 	case path == "/mcp", strings.HasPrefix(path, "/mcp/"),
 		path == "/admin", strings.HasPrefix(path, "/admin/"):
@@ -194,9 +197,13 @@ func isMCPPath(path string) bool { return path == "/mcp" || strings.HasPrefix(pa
 
 // authGuard enforces the bearer token / session cookie policy and attaches
 // the caller's auth.Identity to the request context. The operator token is
-// accepted everywhere; client tokens (tokens may be nil) only on /mcp. Every
-// rejection, whatever the reason, is the same 401.
-func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier) http.Handler {
+// accepted everywhere; client tokens (tokens may be nil) only on /mcp. A
+// client token bound to an audience (an OAuth access token) is accepted only
+// when that audience is the resource of the configured OAuth server (op may
+// be nil, which refuses every such token). Every rejection, whatever the
+// reason, is the same 401; on /mcp with OAuth it carries the RFC 9728
+// resource_metadata challenge.
+func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier, op OAuthProvider) http.Handler {
 	expected := []byte("Bearer " + token)
 	bearerOK := func(r *http.Request) bool {
 		return token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), expected) == 1
@@ -213,10 +220,25 @@ func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier
 		if err != nil {
 			return auth.Identity{}, false
 		}
+		if t.Audience != "" && (op == nil || subtle.ConstantTimeCompare([]byte(t.Audience), []byte(op.Resource())) != 1) {
+			return auth.Identity{}, false
+		}
 		return t.Identity(), true
 	}
-	deny := func(w http.ResponseWriter) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="wpp-mcp"`)
+	challenge := `Bearer realm="wpp-mcp"`
+	mcpChallenge := challenge
+	if op != nil {
+		mcpChallenge += fmt.Sprintf(`, resource_metadata=%q, scope="read"`, op.ResourceMetadataURL())
+	}
+	deny := func(w http.ResponseWriter, r *http.Request) {
+		c := challenge
+		if isMCPPath(r.URL.Path) {
+			c = mcpChallenge
+			if op != nil && r.Header.Get("Authorization") != "" {
+				c += `, error="invalid_token"`
+			}
+		}
+		w.Header().Set("WWW-Authenticate", c)
 		http.Error(w, "unauthorized: run `wpp-mcp open-ui` for a browser login link", http.StatusUnauthorized)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -232,11 +254,11 @@ func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier
 			case isMCPPath(r.URL.Path):
 				var ok bool
 				if id, ok = clientToken(r); !ok {
-					deny(w)
+					deny(w, r)
 					return
 				}
 			default:
-				deny(w)
+				deny(w, r)
 				return
 			}
 		case classBrowser:
@@ -244,7 +266,7 @@ func authGuard(next http.Handler, token string, ui *uiAuth, tokens TokenVerifier
 			if !bearerOK(r) {
 				c, err := r.Cookie(sessionCookie)
 				if err != nil || !ui.validSession(c.Value) {
-					deny(w)
+					deny(w, r)
 					return
 				}
 				id = auth.Operator("session")

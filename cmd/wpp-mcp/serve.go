@@ -90,7 +90,16 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		return 2
 	}
 	monitoring := registerMonitoringFlags(fs)
+	oauthCfg, err := registerOAuthFlags(fs, os.Getenv)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := oauthCfg.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
 	}
 	if err := monitoring.validate(); err != nil {
@@ -222,6 +231,19 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	var auditor mcpsrv.Auditor
 	if *auditDays > 0 {
 		dcfg.Audit, auditor = st, st
+	}
+	oauthSrv, err := oauthCfg.server(st, redactor)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
+	if oauthSrv != nil {
+		dcfg.OAuth = oauthSrv
+		// The issuer's host must pass the Host/Origin guard.
+		host, _ := strings.CutPrefix(oauthSrv.Issuer(), "https://")
+		dcfg.AllowedHosts = append(dcfg.AllowedHosts, host)
+		fmt.Fprintf(os.Stderr, "oauth: authorization server %s for %s; redirects only to %s; approve connections with `wpp-mcp oauth pending` and `wpp-mcp oauth approve <code>`\n",
+			oauthSrv.Issuer(), oauthSrv.Resource(), strings.Join(oauthSrv.RedirectURIs(), ", "))
 	}
 	d, err := daemon.New(dcfg)
 	if err != nil {

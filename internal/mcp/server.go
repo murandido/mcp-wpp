@@ -137,6 +137,12 @@ func (s *Server) MCP() *server.MCPServer { return s.mcp }
 func (s *Server) AttachHTTP(mux *http.ServeMux) {
 	// Stateless: nothing here is session-scoped (the pairing cache is process-wide
 	// device state), so legacy clients get no Mcp-Session-Id either.
-	httpHandler := server.NewStreamableHTTPServer(s.mcp, server.WithStateLess(true))
+	//
+	// mcp-go's own DNS-rebinding check refuses any non-loopback Host on a
+	// loopback listener, which breaks a reverse proxy on the same host that
+	// keeps the public Host (Caddy's default). The daemon's hostGuard wraps
+	// this handler and performs the same check against loopback names plus
+	// the operator's -allowed-host list, so the inner check is turned off.
+	httpHandler := server.NewStreamableHTTPServer(s.mcp, server.WithStateLess(true), server.WithDisableLocalhostProtection(true))
 	mux.Handle("/mcp", httpHandler)
 }
