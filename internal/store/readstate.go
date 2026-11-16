@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,7 +13,8 @@ import (
 //
 // chat_read_state keeps, per chat, the time up to which the user has read it
 // (Unix seconds, so comparisons never depend on how a driver formats
-// timestamps). It only moves forward. messages.mentions_me records at
+// timestamps). Read receipts and mark_read only move it forward;
+// RewindChatRead (the mark_unread tool) is the one explicit way back. messages.mentions_me records at
 // ingestion whether a message mentions the account; rows cached before the
 // column existed stay false.
 
@@ -96,6 +98,42 @@ func (s *Store) MarkChatReadThrough(ctx context.Context, chatJID string, ids []s
 		chatJID, at, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("store read state: %w", err)
+	}
+	return nil
+}
+
+// ErrMessageNotFound means the message is not cached in that chat.
+var ErrMessageNotFound = errors.New("message not found")
+
+// RewindChatRead moves chatJID's read mark back so the digest's only_unread
+// shows its messages again. With fromMessageID, the mark moves to just
+// before that cached message, so it and every later message count as
+// unread; without, the mark is cleared and the whole chat counts as unread.
+// It never moves the mark forward, and it changes local bookkeeping only:
+// nothing is sent to WhatsApp, and a later read receipt from the phone moves
+// the mark forward again.
+func (s *Store) RewindChatRead(ctx context.Context, chatJID, fromMessageID string) error {
+	if chatJID == "" {
+		return errors.New("chat_jid is required")
+	}
+	if fromMessageID == "" {
+		if _, err := s.db.ExecContext(ctx, "DELETE FROM chat_read_state WHERE chat_jid = ?", chatJID); err != nil {
+			return fmt.Errorf("rewind read state: %w", err)
+		}
+		return nil
+	}
+	var at sql.NullInt64
+	err := s.db.QueryRowContext(ctx, "SELECT "+msgEpoch+" FROM messages WHERE chat_jid = ? AND id = ?", chatJID, fromMessageID).Scan(&at)
+	if err == sql.ErrNoRows || err == nil && !at.Valid {
+		return ErrMessageNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("rewind read state: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE chat_read_state
+		SET last_read_at = min(last_read_at, ?), updated_at = ?
+		WHERE chat_jid = ?`, at.Int64-1, time.Now().UTC(), chatJID); err != nil {
+		return fmt.Errorf("rewind read state: %w", err)
 	}
 	return nil
 }

@@ -34,6 +34,7 @@ var toolGroup = map[string]string{
 	"request_sync":        groupCore,
 	"get_poll_results":    groupCore,
 	"digest":              groupCore,
+	"mark_unread":         groupCore,
 
 	// messaging: write tools (also gated by -write).
 	"send_message":       groupMessaging,

@@ -18,6 +18,7 @@
 | `get_status` | yes | yes |  | none (no chat content) | Report the WhatsApp connection state and its transition time, paired account, and read-only mode. |
 | `list_chats` | yes | yes |  | authorised chats only | List cached WhatsApp chats (1:1 and group), optionally filtered by name substring and sorted by recency or alphabetic name. |
 | `list_messages` | yes | yes |  | authorised chats only | Search and page through cached WhatsApp messages, optionally filtering by chat, sender, time range and words (accent-insensitive full-text search); can include surrounding context messages. |
+| `mark_unread` | yes | yes |  | chat in `chat_jid` | Move a chat's local read mark back so digest with only_unread shows its messages again: from message_id onward, or the whole chat when message_id is omitted. |
 | `pairing_status` | yes | yes |  | none (no chat content) | Report the WhatsApp device-pairing state as a structured `setup_state` envelope. |
 | `request_sync` | yes | yes |  | chat in `chat_jid` | Ask WhatsApp servers to backfill historical messages for a chat into the local cache; messages arrive asynchronously and become queryable via list_messages once delivered. |
 | `search_contacts` | yes | yes |  | authorised chats only | Search the cached WhatsApp contact list by case-insensitive substring of name or phone number. |

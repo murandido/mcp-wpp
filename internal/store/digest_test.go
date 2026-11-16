@@ -238,3 +238,45 @@ func TestMarkChatReadThrough(t *testing.T) {
 		t.Fatalf("read mark moved back to %v", at2)
 	}
 }
+
+func TestRewindChatRead(t *testing.T) {
+	s, scoped := digestStore(t)
+	ctx := context.Background()
+	_ = s.MarkChatReadThrough(ctx, aliceJID, []string{"a5"}, time.Time{})
+	_ = s.MarkChatReadThrough(ctx, teamJID, nil, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))
+	if got := digestOf(t, scoped, DigestParams{OnlyUnread: true}); got != "" {
+		t.Fatalf("everything read, digest = %s", got)
+	}
+
+	// Back to a3: a3 and later incoming messages are unread again.
+	if err := s.RewindChatRead(ctx, aliceJID, "a3"); err != nil {
+		t.Fatal(err)
+	}
+	if got := digestOf(t, scoped, DigestParams{OnlyUnread: true}); got != aliceJID+":2[a3,a5]" {
+		t.Fatalf("after rewinding to a3: %s", got)
+	}
+	// Never forward: rewinding "to" a5 keeps a3 unread.
+	if err := s.RewindChatRead(ctx, aliceJID, "a5"); err != nil {
+		t.Fatal(err)
+	}
+	if got := digestOf(t, scoped, DigestParams{OnlyUnread: true}); got != aliceJID+":2[a3,a5]" {
+		t.Fatalf("rewind moved the mark forward: %s", got)
+	}
+	// Without a message: the whole chat is unread.
+	if err := s.RewindChatRead(ctx, teamJID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.ChatLastRead(ctx, teamJID); ok {
+		t.Fatal("read mark not cleared")
+	}
+	if got := digestOf(t, scoped, DigestParams{OnlyUnread: true}); got != teamJID+":3[g1,g3,g4] "+aliceJID+":2[a3,a5]" {
+		t.Fatalf("after clearing the team mark: %s", got)
+	}
+	// A message from another chat is not found.
+	if err := s.RewindChatRead(ctx, aliceJID, "g1"); err != ErrMessageNotFound {
+		t.Fatalf("message from another chat: %v", err)
+	}
+	if err := s.RewindChatRead(ctx, "", ""); err == nil {
+		t.Fatal("empty chat accepted")
+	}
+}

@@ -24,7 +24,7 @@ Your WhatsApp history is some of the most personal data you have. Connecting it 
 | A message forges other messages, or a pairing QR leaks to the model | Message bodies cannot start new lines that look like headers, results are labelled as third-party data, and pairing never goes through MCP. |
 | Runaway sends get the number banned | Daemon-side rate limits that clients cannot bypass. |
 
-Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, pairing by phone-number code, optional retention, voice-note transcription, local OCR of images, and a small default tool surface (13 read-only tools out of 51).
+Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, pairing by phone-number code, optional retention, voice-note transcription, local OCR of images, and a small default tool surface (14 read-only tools out of 52).
 
 ## Quick start
 
@@ -232,7 +232,7 @@ Send times must be in the future and at most 30 days ahead. At the send time the
 
 ## Catching up and webhooks
 
-The `digest` tool answers "what did I miss": per allowed chat, the new messages since a cut-off. It can keep only unread messages (`only_unread`, using the read receipts your phone sends and `mark_read`), only messages that @-mention you (`mentions_only`), or only those matching `keywords`, and it can group by `sender` instead of chat.
+The `digest` tool answers "what did I miss": per allowed chat, the new messages since a cut-off. It can keep only unread messages (`only_unread`, using the read receipts your phone sends and `mark_read`; `mark_unread` moves a chat's read mark back, from a given message or for the whole chat, to see those messages again), only messages that @-mention you (`mentions_only`), or only those matching `keywords`, and it can group by `sender` instead of chat.
 
 For event-driven automation, `serve -webhook-url URL -webhook-secret SECRET` POSTs each live incoming message to your endpoint:
 

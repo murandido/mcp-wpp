@@ -28,6 +28,7 @@ var readOnlyToolAccess = map[string]bool{
 	"list_messages":             true,
 	"mark_chat_read":            false,
 	"mark_read":                 false,
+	"mark_unread":               true, // local digest read state only
 	"pairing_status":            true,
 	"request_chat_access":       true, // records a request only; the user decides
 	"request_sync":              true,
@@ -85,6 +86,7 @@ func (s *Server) registerTools() {
 	// Per-chat consent and the cross-chat digest.
 	s.registerAccessTools()
 	s.registerDigestTool()
+	s.registerMarkUnread()
 	// Speech-to-text for voice notes (opt-in; needs WPP_MCP_TRANSCRIBE_URL).
 	s.registerTranscribeTools()
 	// Local OCR for images (opt-in; needs -ocr and tesseract).

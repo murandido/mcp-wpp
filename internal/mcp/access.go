@@ -68,6 +68,7 @@ var toolAccessScope = map[string]accessScope{
 	"delete_message":            chatArg("chat_jid"),
 	"mark_read":                 chatArg("chat_jid"),
 	"mark_chat_read":            chatArg("chat_jid"),
+	"mark_unread":               chatArg("chat_jid"),
 	"leave_group":               chatArg("chat_jid"),
 	"get_group_info":            chatArg("chat_jid"),
 	"get_group_invite_link":     chatArg("chat_jid"),
