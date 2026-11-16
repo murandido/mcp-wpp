@@ -54,7 +54,12 @@ type APIToken struct {
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
-	hash       []byte
+	// Audience, when set, is the only resource the token is valid for
+	// (OAuth access tokens; RFC 8707). Static tokens have none.
+	Audience string `json:"audience,omitempty"`
+	// GrantID links an OAuth access token to its grant.
+	GrantID string `json:"grant_id,omitempty"`
+	hash    []byte
 }
 
 // Status is "active", "expired" or "revoked" at now.
@@ -108,7 +113,7 @@ func (s *Store) CreateAPIToken(ctx context.Context, in NewAPIToken) (APIToken, s
 		return APIToken{}, "", errors.New("expiry must be in the future")
 	}
 	var n int
-	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM api_tokens").Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM api_tokens WHERE grant_id IS NULL").Scan(&n); err != nil {
 		return APIToken{}, "", fmt.Errorf("count tokens: %w", err)
 	}
 	if n >= maxTokens {
@@ -148,7 +153,7 @@ func (s *Store) CreateAPIToken(ctx context.Context, in NewAPIToken) (APIToken, s
 	return t, plain, nil
 }
 
-const tokCols = "id, name, token_hash, scopes, COALESCE(chats, ''), created_at, expires_at, last_used_at, revoked_at"
+const tokCols = "id, name, token_hash, scopes, COALESCE(chats, ''), created_at, expires_at, last_used_at, revoked_at, COALESCE(audience, ''), COALESCE(grant_id, '')"
 
 func scanToken(row interface{ Scan(...any) error }) (APIToken, error) {
 	var (
@@ -156,7 +161,7 @@ func scanToken(row interface{ Scan(...any) error }) (APIToken, error) {
 		scopes, chats            string
 		expires, used, revokedAt sql.NullTime
 	)
-	if err := row.Scan(&t.ID, &t.Name, &t.hash, &scopes, &chats, &t.CreatedAt, &expires, &used, &revokedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Name, &t.hash, &scopes, &chats, &t.CreatedAt, &expires, &used, &revokedAt, &t.Audience, &t.GrantID); err != nil {
 		return t, err
 	}
 	t.Scopes = strings.Split(scopes, ",")

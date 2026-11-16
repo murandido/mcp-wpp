@@ -5,7 +5,7 @@ A single Go binary, `wpp-mcp`, that links to a personal WhatsApp account through
 ## Structure
 
 ```text
-cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, audit, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
+cmd/wpp-mcp/         subcommands: serve, stdio, pair, login, access, outbox, schedule, token, oauth, audit, keygen, encrypt, backup, restore, rekey, open-ui, tools, healthcheck, smoke
 internal/alert/      session alerts: state machine (down/logged out/up) and webhook notifier with retries
 internal/backup/     encrypted backup archives, verify, restore, key rotation (crash-safe, see rekey.go)
 internal/client/     whatsmeow wrapper: send, download, media cache (sealed), events, history, retention, features, read state and mentions
@@ -14,7 +14,8 @@ internal/crypto/     key file + HKDF sub-keys, SQLCipher connector, sealed media
 internal/daemon/     HTTP server: Host/Origin + auth guards, UI login, /pair, /access, /outbox, /admin/*
 internal/mcp/        mcp-go server: tool registrations, audit, scope and access middlewares, send policy and confirmation (outbox), scheduler, profiles, catalog
 internal/metrics/    Prometheus text exposition for GET /admin/metrics
-internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, audit log
+internal/oauth/      OAuth 2.1 authorization server: metadata, DCR, CIMD fetch (SSRF-guarded), authorize page, operator approval, token, revoke
+internal/store/      SQLite cache: queries, access policy (scoped views), send policy, FTS5 index, outbox and scheduled messages, digest and read state, retention, API tokens, OAuth clients and grants, audit log
 internal/webhook/    signed outgoing webhooks for live incoming messages: filters, bounded queue, coalescing, retries
 internal/transcribe/ OpenAI-compatible speech-to-text client
 internal/security/   path allowlisting, filename sanitising, log redaction
@@ -32,7 +33,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 2. **MCP reads go through `s.store(ctx)`**, the scoped store view. A new query that returns chat content must add `s.scopeClause(...)` in `internal/store` (`accessFilter` alone ignores a client token's chat set; pair it with `s.tokenFilter`). A tool that names a chat must declare its argument in `toolAccessScope`, so the middleware checks it. Resources bypass tool middleware, so they check `allowedChat` themselves.
 3. **Hidden and nonexistent chats must be indistinguishable**: same error text, no counts, no names. `request_chat_access` returns only an ID.
 4. **Nothing personal is written in the clear.** Databases open only through `crypto.OpenSQLite` / `crypto.ReadOnlyConnector`, never `sql.Open("sqlite3", …)`. Media cache writes go through `Client.writeCacheFile`, and reads through `readCacheFile` / `ReadMedia`. The one exception is `internal/backup`, which copies sealed files verbatim and, in `rekey`, re-seals them in memory with `crypto.MediaCipher`; it never writes plaintext, not even to temporary files. Database copies use `crypto.SnapshotDatabase` (online backup API between two keyed connections). The SQLCipher key travels as the `hexkey` URI parameter: a `PRAGMA key` after mattn's connection PRAGMAs cannot reopen an existing database.
-5. **Every HTTP route is authenticated** except `/healthz`, `/readyz` and `/ui/login`. `/mcp` and `/admin/*` take a bearer token only, never the browser cookie. State-changing pages need a CSRF token. The Host/Origin guard wraps everything.
+5. **Every HTTP route is authenticated** except `/healthz`, `/readyz`, `/ui/login` and, with `-oauth`, the exact paths in `oauth.IsPublicPath`. `/mcp` and `/admin/*` take a bearer token only, never the browser cookie. State-changing pages need a CSRF token. The Host/Origin guard wraps everything.
 6. **Writes need consent**: with `-write`, a tool that sends or changes the account follows the target chat's send policy (`chat_send_policy`, `internal/mcp/sendpolicy.go`): `none` refuses it, `confirm` creates an outbox proposal (`internal/mcp/outbox.go`), `direct` acts. Chats without a policy use the default from `-confirm-sends`; tools that target no chat always use the default. The send policy is resolved from the `toolAccessScope` argument after the access check, so it never widens visibility and a hidden chat still gets "chat not found". Only trivial self-visible actions are in `noConfirm`, and `none` still refuses them. Approval re-runs the access middleware and the send policy.
 7. **Pairing never goes through MCP.** `pairing_status` must not return QR payloads or codes.
 8. **Logs stay redacted** through `security.Redactor`, and phone numbers are masked.
@@ -41,6 +42,7 @@ These are what the project is for. A change that weakens one needs an explicit d
 11. **Scheduled messages are writes too.** `schedule_message` follows the send policy when it is created; the scheduler (`RunScheduler`, `-write` only) re-checks access and the send policy at send time, sends through the rate-limited send path, and claims each item atomically (`ClaimScheduled`) so nothing is sent twice. Operator schedules (`wpp-mcp schedule`) need no approval but still require a visible chat.
 12. **Webhooks only report allowed chats.** `internal/webhook` re-checks `ChatAllowed` when each batch is sent, never sends history sync or the account's own messages, leaves text out unless `-webhook-include-text`, never sends media bytes, and never logs the URL or secret (only the host).
 13. **Operational output carries no personal data.** Metric labels take values from fixed sets (tool names, outcomes, states); alert payloads hold an event kind, a time and a fixed message. Backup archives exclude the key file and the token.
+14. **OAuth only mints client tokens.** An OAuth access token is an `api_tokens` row with scopes, chats, an `audience` and a `grant_id`, so everything in invariant 9 applies and it never opens `/admin/*` or the pages. Approval is operator-only, over the bearer admin API (`wpp-mcp oauth approve`), never from the public authorization page; the short code alone completes nothing (the page's opaque request ID and the client's PKCE verifier are also needed). `authGuard` refuses any token whose audience is set and is not the OAuth server's `<public-url>/mcp`, including every audience-bound token when OAuth is off. Redirects go only to an exact entry of the redirect allowlist and are built from the configured value, never from request text; an unknown client or redirect URI gets an error page, never a redirect. Client metadata documents are fetched only from Anthropic origins rebuilt by `cimdFetchURL` (never a caller-chosen host), through `oauth.NewFetchClient` (no redirects, dial-time address guard). Refresh tokens rotate and a reused one revokes its grant.
 
 ## Build and test
 

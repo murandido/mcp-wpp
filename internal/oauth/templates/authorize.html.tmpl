@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Approve connection</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#57534e;--card:#fff;--line:#e7e5e4;--accent:#15803d;--warn:#b45309;--deny:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--card:#292524;--line:#44403c;--accent:#4ade80;--warn:#fbbf24;--deny:#f87171}}
+*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.5}
+h1{font-size:1.5rem;margin:0 0 .25rem}p.lead,small,.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:.75rem;padding:1.1rem 1.25rem;margin:1rem 0}
+.host{font-size:1.4rem;font-weight:700;word-break:break-all;margin:.25rem 0}
+.warn{border-color:var(--warn)}.warn strong{color:var(--warn)}
+code.big{font-size:2.2rem;letter-spacing:.25rem;font-weight:700;display:inline-block;padding:.5rem 1rem;border:2px dashed var(--accent);border-radius:.5rem}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:.5rem;padding:.6rem .8rem;overflow-x:auto;font-size:.95rem}
+.pill{font-size:.8rem;padding:.1rem .55rem;border-radius:999px;border:1px solid var(--line);margin-right:.25rem}
+#status{font-weight:600}.ok{color:var(--accent)}.bad{color:var(--deny)}
+</style>
+</head><body>
+<h1>Approve a connection to wpp-mcp</h1>
+<p class="lead">An application wants to use your WhatsApp cache through this server. Nothing happens until the server's operator approves it on the server itself.</p>
+
+<section class="card">
+<p class="muted">After approval you will be sent back to</p>
+<p class="host">{{.RedirectHost}}</p>
+<p><span class="muted">Client:</span> <strong>{{.ClientName}}</strong><br><small style="word-break:break-all">{{.ClientID}}</small></p>
+<p><span class="muted">Requested access:</span> {{range .Scopes}}<span class="pill">{{.}}</span>{{end}}</p>
+</section>
+
+<section class="card">
+<p>Your code:</p>
+<p><code class="big">{{.Code}}</code></p>
+<p>On the server, run:</p>
+<pre>wpp-mcp oauth approve {{.Code}}</pre>
+<p><small>Add <code>-scope read</code> or <code>-scope read,send</code> and <code>-chats JID,...</code> to choose what the connection may do; <code>wpp-mcp oauth deny {{.Code}}</code> refuses it. The request expires in {{.Minutes}} minutes.</small></p>
+</section>
+
+<section class="card warn">
+<p><strong>Only approve a code you see on your own screen, in a connection you started yourself.</strong> Anyone can open this page and ask you to approve their code; approving it would give them access to your WhatsApp. <code>wpp-mcp oauth pending</code> shows where each request came from.</p>
+</section>
+
+<p id="status" aria-live="polite">Waiting for approval&hellip;</p>
+
+<script nonce="{{.Nonce}}">
+(function(){
+  var path = {{.StatusPath}} + "?req=" + encodeURIComponent({{.RequestID}});
+  var el = document.getElementById("status");
+  function poll(){
+    fetch(path, {cache: "no-store", credentials: "omit"}).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status === "approved" && d.redirect) {
+        el.textContent = "Approved. Returning to the application…"; el.className = "ok";
+        window.location.replace(d.redirect);
+      } else if (d.status === "denied" && d.redirect) {
+        el.textContent = "Denied or expired. Returning to the application…"; el.className = "bad";
+        window.location.replace(d.redirect);
+      } else if (d.status === "unknown") {
+        el.textContent = "This request is no longer valid. Start the connection again."; el.className = "bad";
+      } else {
+        setTimeout(poll, 3000);
+      }
+    }).catch(function(){ setTimeout(poll, 3000); });
+  }
+  setTimeout(poll, 3000);
+})();
+</script>
+</body></html>

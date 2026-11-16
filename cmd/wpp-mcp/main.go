@@ -32,6 +32,7 @@ Commands:
   pair         Link WhatsApp: -phone +<number> for a pairing code, or a QR in the terminal
   access       Decide which chats the AI can see (list, allow, deny, mode, requests, approve)
   token        API tokens for MCP clients: scoped, chat-limited, revocable (create, list, revoke)
+  oauth        Approve and manage OAuth connections (pending, approve, deny, grants, revoke)
   audit        Show the audit log of tool calls and operator actions
   stdio        Bridge an MCP client over stdin/stdout to the running daemon
   outbox       Approve, reject or cancel what the AI proposed or scheduled (with serve -write)
@@ -79,9 +80,13 @@ serve flags:
   -alert-after D         Alert after a paired session is unauthenticated this long (default 5m)
   -alert-format F        json (default) or text (ntfy.sh)
   -alert-header H        Extra "Name: value" header on alert requests (env WPP_MCP_ALERT_HEADER)
+  -oauth                 Serve an OAuth 2.1 authorization server for remote connectors (env WPP_MCP_OAUTH)
+  -public-url URL        Public https origin, required with -oauth (env WPP_MCP_PUBLIC_URL)
+  -oauth-redirect-uris L Redirect URI allowlist (default https://claude.ai/api/mcp/auth_callback)
 Every HTTP route except /healthz and /readyz requires the operator bearer
 token that serve stores in <store>/token (or WPP_MCP_TOKEN). /mcp also
-accepts client tokens from ` + "`wpp-mcp token create`" + `, which is what remote
+accepts client tokens from ` + "`wpp-mcp token create`" + ` and, with -oauth,
+access tokens from approved OAuth connections, which is what remote
 connectors should use. GET /admin/metrics serves
 Prometheus metrics to the operator token.
 `
@@ -155,6 +160,8 @@ func main() {
 		code = runAccess(storeDir, rest)
 	case "token":
 		code = runToken(storeDir, rest)
+	case "oauth":
+		code = runOAuth(storeDir, rest)
 	case "audit":
 		code = runAudit(storeDir, rest)
 	case "tools":

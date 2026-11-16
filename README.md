@@ -19,7 +19,7 @@ Your WhatsApp history is some of the most personal data you have. Connecting it 
 | A malicious message tells the AI to send your data somewhere | **Read-only by default.** With `-write`, every send becomes a **proposal you approve** from the CLI or a web page. Access is checked again when the proposal runs. |
 | Someone copies your disk, backup or container volume | **Encryption at rest**: SQLCipher for both databases and AES-256-GCM for cached media, keyed from a file you keep elsewhere. |
 | Another program or web page talks to the daemon | **Bearer token on every route**, **Host/Origin checks** against DNS rebinding, an optional 0600 Unix socket, and a **stdio bridge** so clients never need a port or a token. |
-| A token stored in a remote connector leaks | **Client tokens** for `/mcp` only: read-only by default, optionally limited to some chats and given an expiry, revocable at once. Only their hash is stored, and they never open the operator API. |
+| A token stored in a remote connector leaks | **Client tokens** for `/mcp` only: read-only by default, optionally limited to some chats and given an expiry, revocable at once. Only their hash is stored, and they never open the operator API. Or **OAuth**: one-hour, rotating, audience-bound tokens for connections you approve on the server. |
 | You cannot tell what a client read or did | An **audit log** of every tool call, resource read and operator action (who, which tool, which chat, the outcome), without message text or arguments. `wpp-mcp audit` shows it. |
 | A message forges other messages, or a pairing QR leaks to the model | Message bodies cannot start new lines that look like headers, results are labelled as third-party data, and pairing never goes through MCP. |
 | Runaway sends get the number banned | Daemon-side rate limits that clients cannot bypass. |
@@ -101,6 +101,54 @@ wpp-mcp token revoke claude-ai                      # refused from the next requ
 The token (`wppmcp_` and 64 hex characters) is printed once and only its SHA-256 is stored. Client tokens work on `/mcp` only. `-chats` narrows what the token sees to those chats, and only when the access policy allows them as well; other chats look nonexistent to it. A `read` token gets an error from every tool that sends or changes the account. With `send`, writes still go through `-write`, the outbox approval and the access policy. Unknown, revoked and expired tokens all get the same 401. The operator token keeps full access. It is the only one accepted on `/admin/*` and for browser login, and the local CLI and `wpp-mcp stdio` use it.
 
 `wpp-mcp audit` shows who called what: `-since 7d`, `-actor claude-ai`, `-chat <jid>`, `-limit N`.
+
+### Connect with OAuth
+
+Instead of pasting a client token into a remote connector, the daemon can act as an OAuth 2.1 authorization server. claude.ai's custom connectors then connect with nothing but the URL, get access tokens that expire after an hour and rotate, and **you approve each connection on the server**. There is no login page or password on the internet: approval only happens over the operator's admin API, from the CLI.
+
+```bash
+wpp-mcp serve -oauth -public-url https://wpp.example.com   # or WPP_MCP_OAUTH=1 WPP_MCP_PUBLIC_URL=...
+```
+
+`-public-url` (env `WPP_MCP_PUBLIC_URL`) is the HTTPS origin your reverse proxy serves, without a path; the MCP endpoint is always `<public-url>/mcp`, and its host is added to the allowed hosts. `serve` refuses `-oauth` (env `WPP_MCP_OAUTH=1`) without a valid `https://` public URL. Your proxy must forward `/mcp`, `/.well-known/oauth-*` and `/oauth/*`; nothing else needs to be public. With Caddy:
+
+```caddyfile
+wpp.example.com {
+	@wpp path /mcp /mcp/* /.well-known/oauth-* /oauth/*
+	handle @wpp {
+		reverse_proxy 127.0.0.1:8765
+	}
+	handle {
+		respond 404
+	}
+}
+```
+
+In claude.ai, add a custom connector with the URL `https://wpp.example.com/mcp` and leave the OAuth fields empty. Then:
+
+1. claude.ai opens a page on your server that shows the client's name, **the host it will return to** (`claude.ai`), the requested scopes and a code such as `ABCD-EFGH`.
+2. On the server, check it and approve it:
+
+   ```bash
+   wpp-mcp oauth pending                      # code, client, redirect host, scopes, source IP, age
+   wpp-mcp oauth approve ABCD-EFGH            # the scopes it asked for, every chat the policy allows
+   wpp-mcp oauth approve ABCD-EFGH -scope read -chats 5511999999999 -days 7
+   wpp-mcp oauth deny ABCD-EFGH
+   ```
+
+   Your choice wins: `-scope` may narrow or widen what the client requested (by default, what it requested), `-chats` limits the connection on top of the access policy, and `-days` (default 30, at most 365) is how long the connection survives without being used.
+3. The page notices the approval within a few seconds and sends the browser back to claude.ai, which finishes the connection.
+
+**Only approve a code you see on your own screen, in a connection you started yourself.** Anyone who can reach the page can start a flow and ask you to approve their code; `oauth pending` shows where each request came from.
+
+```bash
+wpp-mcp oauth grants              # connections, scopes, chats, last use, expiry, status
+wpp-mcp oauth revoke 3f9c1a2b7d4e # ends one at once: its refresh and access tokens stop working
+```
+
+How it works: the server publishes [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728) and [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414) metadata, and the 401 from `/mcp` points to it. Clients identify themselves with a Client ID Metadata Document (an `https` `client_id` on `claude.ai` or `claude.com`; the server never fetches documents from other hosts, fetched without redirects, with a 5 s timeout and a 64 KiB limit, never from a private, loopback or link-local address) or register through [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591) (rate limited and capped). Redirects go only to an exact entry of `-oauth-redirect-uris` (env `WPP_MCP_OAUTH_REDIRECT_URIS`, default `https://claude.ai/api/mcp/auth_callback`); anything else gets an error page, never a redirect. PKCE S256 is mandatory, authorization codes are single-use and valid for 60 seconds, and responses carry `iss` ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)). Access tokens are ordinary client tokens bound to `<public-url>/mcp` ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707)) and valid for one hour; `wpp-mcp token list` shows them as `oauth:<client>#<grant>`. Refresh tokens rotate on every use, and presenting a used one revokes the whole connection. Pending requests and codes live only in the daemon's memory, so a restart cancels them.
+
+Scopes are checked per tool, as for client tokens: every token has `read`, and a tool that needs `send` returns an error explaining it.
 
 ## Pairing
 
@@ -374,6 +422,9 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -addr` | `WPP_MCP_ADDR` | `127.0.0.1:8765` | `host:port` or `unix:/path.sock` (0600) |
 | `serve -allow-remote` | | off | Allow a non-loopback bind (put TLS in front) |
 | `serve -allowed-host` | `WPP_MCP_ALLOWED_HOSTS` | | Extra Host/Origin values, e.g. a reverse-proxy name |
+| `serve -oauth` | `WPP_MCP_OAUTH` | off | Serve an OAuth 2.1 authorization server for remote connectors (see [Connect with OAuth](#connect-with-oauth)) |
+| `serve -public-url` | `WPP_MCP_PUBLIC_URL` | | Public `https://host` of the daemon, required with `-oauth`; the issuer, with the resource at `/mcp` |
+| `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
 | `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, the default send policy for chats without one: `confirm` (on) or `direct` (off); see `wpp-mcp access send` |

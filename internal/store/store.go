@@ -168,6 +168,10 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply tokens and audit schema: %w", err)
 	}
+	if err := applyOAuthSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := applyDigestSchema(db); err != nil {
 		db.Close()
 		return nil, err

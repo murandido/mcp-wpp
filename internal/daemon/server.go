@@ -45,7 +45,8 @@ type pairDriver interface {
 // `Authorization: Bearer <operator token>`; /mcp accepts it or a client API
 // token from Tokens; browser pages accept the operator bearer token or a
 // session cookie minted through /admin/ui-login → /ui/login. Only /healthz,
-// /readyz and /ui/login are public.
+// /readyz, /ui/login and, with OAuth, its well-known documents and /oauth/*
+// endpoints are public.
 //
 // AllowedHosts extends the Host/Origin allowlist beyond loopback names, for
 // example the public hostname of an HTTPS reverse proxy. Entries are a bare
@@ -75,6 +76,21 @@ type Config struct {
 	// AdminMount, if non-nil, registers extra operator endpoints. They are
 	// served under /admin/* (bearer only) or as browser pages.
 	AdminMount func(mux *http.ServeMux)
+	// OAuth, when set, serves the OAuth authorization server (its public
+	// endpoints and /admin/oauth/*), advertises it in the 401 challenge of
+	// /mcp and enforces the audience of OAuth access tokens.
+	OAuth OAuthProvider
+}
+
+// OAuthProvider is the OAuth authorization server. *oauth.Server
+// satisfies it.
+type OAuthProvider interface {
+	Mount(mux *http.ServeMux)
+	// Resource is the canonical URL of /mcp, the audience OAuth access
+	// tokens must carry.
+	Resource() string
+	// ResourceMetadataURL is the RFC 9728 document for Resource.
+	ResourceMetadataURL() string
 }
 
 // Server is the long-lived daemon process. Safe for a single Run call.
@@ -194,8 +210,11 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.cfg.Audit != nil {
 		mountAuditAdmin(mux, s.cfg.Audit)
 	}
+	if s.cfg.OAuth != nil {
+		s.cfg.OAuth.Mount(mux)
+	}
 
-	rootHandler := hostGuard(authGuard(securityHeaders(auditAdmin(mux, s.cfg.Audit)), s.cfg.AuthToken, ui, verifier), s.cfg.AllowedHosts)
+	rootHandler := hostGuard(authGuard(securityHeaders(auditAdmin(mux, s.cfg.Audit)), s.cfg.AuthToken, ui, verifier, s.cfg.OAuth), s.cfg.AllowedHosts)
 
 	ln, err := listen(s.cfg.Addr)
 	if err != nil {
