@@ -57,6 +57,7 @@ make test            # unit tests; SQLCipher/FTS5 tests fail rather than skip (W
 make test-race
 make e2e             # real binary, encrypted throwaway stores, no WhatsApp account
 make smoke
+make fuzz            # every FuzzXxx target for FUZZTIME (default 20s); not part of check
 make container-test  # all of the above in Debian, for hosts without SQLCipher
 make docs            # regenerate docs/tools.md (CI fails if it is stale)
 make check           # every CI gate: lint (vet, gofmt, golangci-lint), govulncheck, tidy, docs, race tests, smoke, e2e
@@ -66,6 +67,8 @@ make hooks           # once per clone: commit-msg check and a pre-push `make lin
 Lint findings are fixed, not silenced. A `//nolint` needs the linter name and a reason, and `nolintlint` enforces that. Repository-wide exclusions live in `.golangci.yml` with a justification. Ubuntu and Debian SQLCipher packages include FTS5, but Fedora's does not; there, FTS tests skip locally. The container stage (`WPP_MCP_REQUIRE_FTS5=1`) always requires it. OCR tests that run the real `tesseract` skip when it is missing, except in the container stage (`WPP_MCP_REQUIRE_TESSERACT=1`).
 
 A plain `go test ./...` also works: crypto and FTS tests skip, and the store falls back to LIKE search, which stays case- and accent-insensitive through `unaccent_lower`, a SQL function the crypto connector registers on every connection (so test databases must be opened through it too). Store tests use `openTestStore(t)` (seeded in-memory DB, `internal/store/testdata/seed.sql`). Access tests in `internal/mcp/access_test.go` show how to build a server over a real store without connecting to WhatsApp. Never point tests at a live account.
+
+Parsers and validators that see untrusted input (URLs, paths, JIDs, archive names, redirect targets) get a `FuzzXxx` target asserting their documented invariants; `scripts/fuzz.sh` finds them automatically. A crasher saved under `testdata/fuzz/` is committed as a regression test. CI runs a short, non-blocking fuzz job on every change and a longer one weekly.
 
 When adding a tool:
 

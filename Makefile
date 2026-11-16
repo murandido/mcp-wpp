@@ -1,4 +1,4 @@
-.PHONY: docker-build check hooks vuln tidy-check docs-check lint-go docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
+.PHONY: fuzz docker-build check hooks vuln tidy-check docs-check lint-go docs build build-plain test test-race test-cover lint vet fmt clean login serve smoke e2e upgrade-check sqlcipher-check container-test
 
 # fmt uses process substitution; force bash so `make lint` works under a POSIX /bin/sh
 SHELL := /bin/bash
@@ -81,6 +81,12 @@ lint: vet fmt lint-go
 vuln: sqlcipher-check
 	@command -v govulncheck >/dev/null || { echo "govulncheck missing: go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)"; exit 1; }
 	govulncheck -tags libsqlite3,sqlite_fts5 ./...
+
+# Run every fuzz target for FUZZTIME (default 20s each). Failing inputs are
+# saved under testdata/fuzz/ and replayed by `make test` from then on.
+FUZZTIME ?= 20s
+fuzz: sqlcipher-check
+	FUZZTIME=$(FUZZTIME) GO=$(GO) TAGS="libsqlite3 sqlite_fts5" scripts/fuzz.sh
 
 # go.mod and go.sum must already be tidy.
 tidy-check:
