@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/murandido/mcp-wpp/internal/store"
 )
@@ -316,16 +317,26 @@ func (d *directAccess) list(ctx context.Context, q string) (string, []store.Acce
 }
 func (d *directAccess) mode(ctx context.Context) (string, error) { return d.st.AccessMode(ctx) }
 func (d *directAccess) setMode(ctx context.Context, m string) error {
-	return d.st.SetAccessMode(ctx, m)
+	start := time.Now()
+	err := d.st.SetAccessMode(ctx, m)
+	cliAudit(ctx, d.st, start, routeAccessMode, nil, accessModeBody(m), err)
+	return err
 }
 func (d *directAccess) setChat(ctx context.Context, jid, state string) error {
-	if state == "reset" {
-		state = store.AccessDefault
+	start := time.Now()
+	stored := state
+	if stored == "reset" {
+		stored = store.AccessDefault
 	}
-	return d.st.SetChatAccess(ctx, jid, state, "set with wpp-mcp access")
+	err := d.st.SetChatAccess(ctx, jid, stored, "set with wpp-mcp access")
+	cliAudit(ctx, d.st, start, routeAccessChat, nil, accessChatBody(jid, state), err)
+	return err
 }
 func (d *directAccess) setSend(ctx context.Context, jid, policy string) error {
-	return d.st.SetChatSendPolicy(ctx, jid, policy)
+	start := time.Now()
+	err := d.st.SetChatSendPolicy(ctx, jid, policy)
+	cliAudit(ctx, d.st, start, routeAccessSend, nil, accessSendBody(jid, policy), err)
+	return err
 }
 func (d *directAccess) setWindow(ctx context.Context, jid, window string) error {
 	return d.st.SetChatSendWindow(ctx, jid, window)
@@ -334,7 +345,10 @@ func (d *directAccess) requests(ctx context.Context) ([]store.AccessRequest, err
 	return d.st.ListAccessRequests(ctx, "pending")
 }
 func (d *directAccess) decide(ctx context.Context, id int64, approve bool, jids []string) error {
-	return d.st.DecideAccessRequest(ctx, id, approve, jids)
+	start := time.Now()
+	err := d.st.DecideAccessRequest(ctx, id, approve, jids)
+	cliAudit(ctx, d.st, start, routeAccessDecide, idPath("id", id), accessDecideBody(approve, jids), err)
+	return err
 }
 func (d *directAccess) close() { d.st.Close(); d.release() }
 
@@ -386,13 +400,13 @@ func (h *httpAccess) mode(ctx context.Context) (string, error) {
 	return out.Mode, err
 }
 func (h *httpAccess) setMode(ctx context.Context, m string) error {
-	return h.call(ctx, http.MethodPost, "/admin/access/mode", map[string]string{"mode": m}, nil)
+	return h.call(ctx, http.MethodPost, "/admin/access/mode", accessModeBody(m), nil)
 }
 func (h *httpAccess) setChat(ctx context.Context, jid, state string) error {
-	return h.call(ctx, http.MethodPost, "/admin/access/chat", map[string]string{"jid": jid, "state": state, "note": "set with wpp-mcp access"}, nil)
+	return h.call(ctx, http.MethodPost, "/admin/access/chat", accessChatBody(jid, state), nil)
 }
 func (h *httpAccess) setSend(ctx context.Context, jid, policy string) error {
-	return h.call(ctx, http.MethodPost, "/admin/access/send", map[string]string{"jid": jid, "send": policy}, nil)
+	return h.call(ctx, http.MethodPost, "/admin/access/send", accessSendBody(jid, policy), nil)
 }
 func (h *httpAccess) setWindow(ctx context.Context, jid, window string) error {
 	return h.call(ctx, http.MethodPost, "/admin/access/window", map[string]string{"jid": jid, "window": window}, nil)
@@ -405,6 +419,6 @@ func (h *httpAccess) requests(ctx context.Context) ([]store.AccessRequest, error
 	return out.Requests, err
 }
 func (h *httpAccess) decide(ctx context.Context, id int64, approve bool, jids []string) error {
-	return h.call(ctx, http.MethodPost, fmt.Sprintf("/admin/access/requests/%d", id), map[string]any{"approve": approve, "jids": jids}, nil)
+	return h.call(ctx, http.MethodPost, fmt.Sprintf("/admin/access/requests/%d", id), accessDecideBody(approve, jids), nil)
 }
 func (h *httpAccess) close() {}

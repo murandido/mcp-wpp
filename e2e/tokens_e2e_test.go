@@ -133,7 +133,9 @@ func TestTokens_CLIWithoutDaemon(t *testing.T) {
 		t.Fatalf("token list offline: %s", out)
 	}
 	run("token", "revoke", "offline")
-	if out := run("audit"); !strings.Contains(out, "token create") || !strings.Contains(out, "token revoke") {
+	// The same actions and fields the admin API records, by the CLI actor.
+	if out := run("audit", "-actor", "operator:cli"); !strings.Contains(out, "POST /admin/tokens ") ||
+		!strings.Contains(out, "POST /admin/tokens/{ref}/revoke") || !strings.Contains(out, "ref=offline") || strings.Contains(out, tok) {
 		t.Fatalf("offline audit: %s", out)
 	}
 }

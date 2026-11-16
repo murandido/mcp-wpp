@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/murandido/mcp-wpp/internal/client"
 	"github.com/murandido/mcp-wpp/internal/security"
@@ -65,15 +66,21 @@ func runLogin(storeDir string, redactor *security.Redactor, args []string) int {
 	}
 	defer c.Disconnect()
 
+	start := time.Now()
 	if *phone != "" {
 		fmt.Fprintln(os.Stderr, "Starting phone-number pairing flow.")
-		if err := c.PairPhoneLogin(ctx, *phone, os.Stdout); err != nil {
+		err := c.PairPhoneLogin(ctx, *phone, os.Stdout)
+		// The number is never recorded, as with the daemon's route.
+		cliAudit(ctx, st, start, routePairCode, nil, nil, err)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "login failed: %v\n", err)
 			return 1
 		}
 	} else {
 		fmt.Fprintln(os.Stderr, "Starting pairing flow — scan the QR code below with your phone.")
-		if err := c.Login(ctx, os.Stdout); err != nil {
+		err := c.Login(ctx, os.Stdout)
+		cliAudit(ctx, st, start, actionLoginQR, nil, nil, err)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "login failed: %v\n", err)
 			return 1
 		}

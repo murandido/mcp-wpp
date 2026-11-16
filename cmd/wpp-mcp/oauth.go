@@ -294,8 +294,9 @@ func (d *directAdmin) listGrants(ctx context.Context) ([]oauth.GrantView, error)
 }
 
 func (d *directAdmin) revokeGrant(ctx context.Context, id string) (store.OAuthGrant, error) {
+	start := time.Now()
 	g, err := d.st.RevokeOAuthGrant(ctx, id, "revoked by operator")
-	d.record(ctx, "oauth revoke", "id="+id, err != nil)
+	cliAudit(ctx, d.st, start, routeGrantRevoke, idPath("id", id), nil, err)
 	return g, err
 }
 
