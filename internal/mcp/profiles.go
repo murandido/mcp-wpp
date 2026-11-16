@@ -35,6 +35,8 @@ var toolGroup = map[string]string{
 	"get_poll_results":    groupCore,
 	"digest":              groupCore,
 	"mark_unread":         groupCore,
+	"get_chat_notes":      groupCore,
+	"update_chat_notes":   groupCore,
 
 	// messaging: write tools (also gated by -write).
 	"send_message":       groupMessaging,

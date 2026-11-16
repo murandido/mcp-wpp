@@ -29,6 +29,8 @@ var readOnlyToolAccess = map[string]bool{
 	"mark_chat_read":            false,
 	"mark_read":                 false,
 	"mark_unread":               true, // local digest read state only
+	"get_chat_notes":            true,
+	"update_chat_notes":         true, // local notes only, never sent to WhatsApp
 	"pairing_status":            true,
 	"request_chat_access":       true, // records a request only; the user decides
 	"request_sync":              true,
@@ -87,6 +89,7 @@ func (s *Server) registerTools() {
 	s.registerAccessTools()
 	s.registerDigestTool()
 	s.registerMarkUnread()
+	s.registerNotesTools()
 	// Speech-to-text for voice notes (opt-in; needs WPP_MCP_TRANSCRIBE_URL).
 	s.registerTranscribeTools()
 	// Local OCR for images (opt-in; needs -ocr and tesseract).

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -172,7 +173,7 @@ type getChatArgs struct {
 
 func (s *Server) registerGetChat() {
 	tool := mcp.NewTool("get_chat",
-		mcp.WithDescription(offlineSafePrefix+"Fetch metadata for a single cached chat by JID. Read-only; no side effects. Use list_chats to discover chat JIDs, or get_group_info for live group metadata. Returns a JSON object describing the chat (JID, name, last-message metadata when requested), or the JSON literal `null` when the chat is not in the cache."),
+		mcp.WithDescription(offlineSafePrefix+"Fetch metadata for a single cached chat by JID. Read-only; no side effects. Use list_chats to discover chat JIDs, or get_group_info for live group metadata. Returns a JSON object describing the chat (JID, name, last-message metadata when requested, and the start of its living notes when there are any; read them in full with get_chat_notes), or the JSON literal `null` when the chat is not in the cache."),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description(jidDesc)),
 		mcp.WithBoolean("include_last_message", mcp.DefaultBool(true), mcp.Description("if true, include the chat's most recent message in the result (defaults to true)")),
 		mcp.WithReadOnlyHintAnnotation(true),
@@ -189,7 +190,11 @@ func (s *Server) registerGetChat() {
 		if chat == nil {
 			return mcp.NewToolResultText("null"), nil
 		}
-		return resultJSON(chat)
+		out := chatWithNotes{Chat: chat}
+		if n, err := s.store(ctx).GetChatNotes(ctx, chat.JID); err == nil && n.Version > 0 {
+			out.Notes = &notesSnippet{Version: n.Version, UpdatedAt: n.UpdatedAt.Format(time.RFC3339), Excerpt: excerpt(n.Summary, notesExcerptRunes)}
+		}
+		return resultJSON(out)
 	}))
 }
 
@@ -335,4 +340,26 @@ func (s *Server) registerPairingStatus() {
 		}
 		return resultJSON(resp)
 	})
+}
+
+// notesExcerptRunes bounds the notes excerpt get_chat includes.
+const notesExcerptRunes = 500
+
+type chatWithNotes struct {
+	*store.Chat
+	Notes *notesSnippet `json:"notes,omitempty"`
+}
+
+type notesSnippet struct {
+	Version   int    `json:"version"`
+	UpdatedAt string `json:"updated_at"`
+	Excerpt   string `json:"excerpt"`
+}
+
+func excerpt(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
