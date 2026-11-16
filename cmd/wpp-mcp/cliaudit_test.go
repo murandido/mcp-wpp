@@ -104,6 +104,8 @@ func TestCLIAudit_MatchesDaemon(t *testing.T) {
 			routeAccessChat, "state=reset"},
 		{"send", func() error { return api.setSend(ctx, cliTestJID, "none") }, func() error { return direct.setSend(ctx, cliTestJID, "none") },
 			routeAccessSend, "send=none"},
+		{"window", func() error { return api.setWindow(ctx, cliTestJID, "08:00-22:00") }, func() error { return direct.setWindow(ctx, cliTestJID, "08:00-22:00") },
+			routeAccessWindow, "window=08:00-22:00"},
 		{"decide", func() error { return api.decide(ctx, reqID(viaAPI), true, []string{cliTestJID}) },
 			func() error { return direct.decide(ctx, reqID(offline), true, []string{cliTestJID}) },
 			routeAccessDecide, "id=1 approve=true"},

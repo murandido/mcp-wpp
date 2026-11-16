@@ -339,7 +339,10 @@ func (d *directAccess) setSend(ctx context.Context, jid, policy string) error {
 	return err
 }
 func (d *directAccess) setWindow(ctx context.Context, jid, window string) error {
-	return d.st.SetChatSendWindow(ctx, jid, window)
+	start := time.Now()
+	err := d.st.SetChatSendWindow(ctx, jid, window)
+	cliAudit(ctx, d.st, start, routeAccessWindow, nil, map[string]string{"jid": jid, "window": window}, err)
+	return err
 }
 func (d *directAccess) requests(ctx context.Context) ([]store.AccessRequest, error) {
 	return d.st.ListAccessRequests(ctx, "pending")

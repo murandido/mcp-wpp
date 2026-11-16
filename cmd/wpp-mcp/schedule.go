@@ -170,7 +170,11 @@ func scheduleOffline(ctx context.Context, storeDir, ref, message string, sendAt 
 	if jid == "" {
 		return store.Proposal{}, 1
 	}
-	p, err := scheduleInStore(ctx, st, jid, message, sendAt, time.Now())
+	start := time.Now()
+	p, err := scheduleInStore(ctx, st, jid, message, sendAt, start)
+	// The same body the daemon's admin API receives; only whitelisted
+	// fields reach the audit entry, never the message.
+	cliAudit(ctx, st, start, routeSchedule, nil, map[string]string{"chat": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}, err)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "schedule: %v\n", err)
 		return store.Proposal{}, 1
