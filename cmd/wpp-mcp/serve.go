@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // -timezone and schedule -tz work without a system zone database
 
 	"github.com/murandido/mcp-wpp/internal/client"
 	"github.com/murandido/mcp-wpp/internal/daemon"
@@ -34,12 +35,14 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		disableTools  string
 		maxPerHour    int
 		retainDays    int
+		timezone      = os.Getenv("WPP_MCP_TIMEZONE")
 		confirmSends  = true
+		selfApprove   bool
 	)
 	for _, b := range []struct {
 		env string
 		dst *bool
-	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}, {"WPP_MCP_CONFIRM_SENDS", &confirmSends}} {
+	}{{"WPP_MCP_WRITE", &write}, {"WPP_MCP_LABELS", &labelsEnabled}, {"WPP_MCP_CONFIRM_SENDS", &confirmSends}, {"WPP_MCP_SELF_APPROVE", &selfApprove}} {
 		if value := os.Getenv(b.env); value != "" {
 			v, err := strconv.ParseBool(value)
 			if err != nil {
@@ -88,6 +91,8 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	fs.StringVar(&disableTools, "disable-tools", os.Getenv("WPP_MCP_DISABLE_TOOLS"), "comma-separated tool groups or names to hide (env WPP_MCP_DISABLE_TOOLS)")
 	fs.IntVar(&maxPerHour, "max-sends-per-hour", maxPerHour, "cap on outbound sends in any trailing hour (env WPP_MCP_MAX_SENDS_PER_HOUR)")
 	fs.BoolVar(&confirmSends, "confirm-sends", confirmSends, "with -write, the default send policy for chats without one: proposals the user approves (wpp-mcp outbox); -confirm-sends=false acts immediately. Per chat: wpp-mcp access send (env WPP_MCP_CONFIRM_SENDS)")
+	fs.BoolVar(&selfApprove, "self-approve", selfApprove, "with -write, approve outbox proposals by typing `approve <id>`, `reject <id>` or `outbox` into your own WhatsApp chat from your phone; MCP tools then cannot write to that chat (env WPP_MCP_SELF_APPROVE)")
+	fs.StringVar(&timezone, "timezone", timezone, "IANA time zone per-chat send windows are read in, e.g. America/Sao_Paulo (default the system zone; env WPP_MCP_TIMEZONE)")
 	fs.IntVar(&retainDays, "retain-days", retainDays, "delete cached messages and media older than N days; 0 keeps everything (env WPP_MCP_RETAIN_DAYS)")
 	auditDays, auditErr := registerAuditDays(fs)
 	if auditErr != nil {
@@ -124,6 +129,10 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", fullHistoryErr)
 		return 2
 	}
+	if selfApprove && !write {
+		fmt.Fprintln(os.Stderr, "-self-approve needs -write")
+		return 2
+	}
 	if maxPerHour < 1 {
 		fmt.Fprintln(os.Stderr, "-max-sends-per-hour must be at least 1")
 		return 2
@@ -136,6 +145,11 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		}
 	}
 	ocrEngine, err := ocrOpts.engine(os.Stderr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 2
+	}
+	loc, err := loadTimezone(timezone)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		return 2
@@ -268,6 +282,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		Tools:         selection,
 		ConfirmSends:  confirmSends,
 		Audit:         auditor,
+		Timezone:      loc,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tools: %v\n", err)
@@ -296,6 +311,13 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		// daemons leave them queued.
 		go mcpServer.RunScheduler(ctx, mcpsrv.SchedulerInterval)
 	}
+	if selfApprove {
+		mcpServer.EnableSelfApprove()
+		c.OnSelfCommand(func(cmd client.SelfCommand) {
+			go mcpServer.RunSelfCommand(ctx, cmd)
+		})
+		fmt.Fprintln(os.Stderr, "self-approve: proposals can be approved from your own WhatsApp chat (`outbox`, `approve <id>`, `reject <id>`), typed on another device than this one; MCP tools cannot write to that chat")
+	}
 	if retainDays > 0 {
 		fmt.Fprintf(os.Stderr, "retention: messages and media older than %d day(s) are deleted hourly\n", retainDays)
 		go c.RunRetention(ctx, time.Duration(retainDays)*24*time.Hour)
@@ -311,6 +333,19 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// loadTimezone resolves -timezone: an IANA name, or "" for the local zone.
+// The zone database is embedded (time/tzdata), so slim images work too.
+func loadTimezone(name string) (*time.Location, error) {
+	if strings.TrimSpace(name) == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(strings.TrimSpace(name))
+	if err != nil {
+		return nil, fmt.Errorf("-timezone: unknown time zone %q (use an IANA name such as America/Sao_Paulo)", name)
+	}
+	return loc, nil
 }
 
 // resolveAddr applies the -addr / WPP_MCP_ADDR / default precedence.

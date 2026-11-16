@@ -26,6 +26,11 @@ Usage:
   wpp-mcp access send <jid|name> none|confirm|direct|reset
                                         Set how the AI may write to a chat (with serve -write):
                                         refuse, wait for approval, or act at once
+  wpp-mcp access window <jid|name> HH:MM-HH:MM|off
+                                        Hours when the AI may write to a chat, in the
+                                        daemon's -timezone (may wrap midnight, 22:00-06:00).
+                                        Outside them messages wait for the next opening
+                                        and other writes are refused
   wpp-mcp access mode [allowlist|all]   Show or set the mode (default: allowlist)
   wpp-mcp access requests               List pending requests from the AI
   wpp-mcp access approve <id> [jid...]  Approve a request (all matches, or only the given JIDs)
@@ -46,6 +51,7 @@ type accessBackend interface {
 	setMode(ctx context.Context, mode string) error
 	setChat(ctx context.Context, jid, state string) error
 	setSend(ctx context.Context, jid, policy string) error
+	setWindow(ctx context.Context, jid, window string) error
 	requests(ctx context.Context) ([]store.AccessRequest, error)
 	decide(ctx context.Context, id int64, approve bool, jids []string) error
 	close()
@@ -90,6 +96,19 @@ func runAccess(storeDir string, args []string) int {
 			return 2
 		}
 		return accessSend(ctx, be, strings.Join(rest[:len(rest)-1], " "), policy)
+	case "window":
+		if len(rest) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: wpp-mcp access window <jid|name> HH:MM-HH:MM|off")
+			return 2
+		}
+		window := rest[len(rest)-1]
+		if window != "off" && window != "reset" {
+			if _, err := store.ParseSendWindow(window); err != nil {
+				fmt.Fprintf(os.Stderr, "access: %v\n", err)
+				return 2
+			}
+		}
+		return accessWindow(ctx, be, strings.Join(rest[:len(rest)-1], " "), window)
 	case "mode":
 		if len(rest) == 0 {
 			mode, err := be.mode(ctx)
@@ -145,7 +164,7 @@ func stateText(e store.AccessEntry) string {
 
 func printChats(w io.Writer, chats []store.AccessEntry) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STATE\tSEND\tNAME\tJID")
+	fmt.Fprintln(tw, "STATE\tSEND\tWINDOW\tNAME\tJID")
 	for _, c := range chats {
 		name := c.Name
 		if c.IsGroup {
@@ -155,7 +174,11 @@ func printChats(w io.Writer, chats []store.AccessEntry) {
 		if send == "" {
 			send = "default"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", stateText(c), send, name, c.JID)
+		window := c.Window
+		if window == "" {
+			window = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", stateText(c), send, window, name, c.JID)
 	}
 	tw.Flush()
 }
@@ -205,6 +228,19 @@ func accessSend(ctx context.Context, be accessBackend, ref, policy string) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "%s: send %s\n", jid, policy)
+	return 0
+}
+
+func accessWindow(ctx context.Context, be accessBackend, ref, window string) int {
+	jid := resolveChatRef(ctx, be, ref, "access")
+	if jid == "" {
+		return 1
+	}
+	if err := be.setWindow(ctx, jid, window); err != nil {
+		fmt.Fprintf(os.Stderr, "access: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "%s: send window %s (daemon time zone)\n", jid, window)
 	return 0
 }
 
@@ -291,6 +327,9 @@ func (d *directAccess) setChat(ctx context.Context, jid, state string) error {
 func (d *directAccess) setSend(ctx context.Context, jid, policy string) error {
 	return d.st.SetChatSendPolicy(ctx, jid, policy)
 }
+func (d *directAccess) setWindow(ctx context.Context, jid, window string) error {
+	return d.st.SetChatSendWindow(ctx, jid, window)
+}
 func (d *directAccess) requests(ctx context.Context) ([]store.AccessRequest, error) {
 	return d.st.ListAccessRequests(ctx, "pending")
 }
@@ -354,6 +393,9 @@ func (h *httpAccess) setChat(ctx context.Context, jid, state string) error {
 }
 func (h *httpAccess) setSend(ctx context.Context, jid, policy string) error {
 	return h.call(ctx, http.MethodPost, "/admin/access/send", map[string]string{"jid": jid, "send": policy}, nil)
+}
+func (h *httpAccess) setWindow(ctx context.Context, jid, window string) error {
+	return h.call(ctx, http.MethodPost, "/admin/access/window", map[string]string{"jid": jid, "window": window}, nil)
 }
 func (h *httpAccess) requests(ctx context.Context) ([]store.AccessRequest, error) {
 	var out struct {

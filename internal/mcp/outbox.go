@@ -58,14 +58,24 @@ func (s *Server) confirmMiddleware(next server.ToolHandlerFunc) server.ToolHandl
 			markAudit(ctx, auditDenied)
 			return chatNotFound(ref), nil
 		}
+		if reason := s.ownChatBlocked(ref); reason != "" {
+			markAudit(ctx, auditDenied)
+			return mcp.NewToolResultError(reason), nil
+		}
 		policy, err := s.sendPolicyFor(ctx, ref)
 		if err != nil {
 			return mcp.NewToolResultError("cannot read the send policy: " + err.Error()), nil
 		}
-		switch {
-		case policy == store.SendNone:
+		if policy == store.SendNone {
 			markAudit(ctx, auditDenied)
 			return mcp.NewToolResultError(sendRefusedText(ref)), nil
+		}
+		// The send window comes after the access check and the policy, so
+		// it never reveals anything about a hidden chat.
+		if res := s.applySendWindow(ctx, name, ref, args, policy); res != nil {
+			return res, nil
+		}
+		switch {
 		case selfConfirming[name]:
 			return next(withSendPolicy(ctx, policy), req)
 		case policy == store.SendDirect || !needsConfirmation(name):
@@ -153,8 +163,11 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 	if err := json.Unmarshal([]byte(p.ArgsJSON), &args); err != nil {
 		return finish(true, "corrupt proposal: "+err.Error())
 	}
-	// The chat may have been hidden, or its sends turned off, since the
-	// proposal was made.
+	// The token that proposed it may have been revoked, the chat hidden,
+	// or its sends turned off, since the proposal was made.
+	if reason := s.creatorBlocked(ctx, p); reason != "" {
+		return finish(true, reason)
+	}
 	if reason := s.writeBlocked(ctx, p.Tool, args); reason != "" {
 		return finish(true, reason)
 	}
@@ -164,17 +177,22 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 		s.wakeScheduler()
 		return *p, nil
 	}
-	tool := s.mcp.GetTool(p.Tool)
+	return finish(s.execute(ctx, p.Tool, args))
+}
+
+// execute runs an approved or deferred call through the access middleware,
+// exactly as a direct call, and reports whether it failed and its text.
+func (s *Server) execute(ctx context.Context, name string, args map[string]any) (failed bool, text string) {
+	tool := s.mcp.GetTool(name)
 	if tool == nil {
-		return finish(true, fmt.Sprintf("tool %s is not enabled on this daemon", p.Tool))
+		return true, fmt.Sprintf("tool %s is not enabled on this daemon", name)
 	}
 	req := mcp.CallToolRequest{}
-	req.Params.Name = p.Tool
+	req.Params.Name = name
 	req.Params.Arguments = args
-	// Run through the access middleware as well, exactly as a direct call.
 	res, err := s.accessMiddleware(tool.Handler)(context.WithValue(ctx, executingKey{}, true), req)
 	if err != nil {
-		return finish(true, err.Error())
+		return true, err.Error()
 	}
 	var texts []string
 	for _, c := range res.Content {
@@ -182,8 +200,21 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 			texts = append(texts, t.Text)
 		}
 	}
-	text := strings.Join(texts, "\n")
-	return finish(res.IsError || reportsFailure(text), text)
+	text = strings.Join(texts, "\n")
+	return res.IsError || reportsFailure(text), text
+}
+
+// creatorBlocked refuses an item whose creating client token has been
+// revoked since. It returns the refusal text, or "" when it may proceed.
+func (s *Server) creatorBlocked(ctx context.Context, p *store.Proposal) string {
+	revoked, err := s.client.Store().CreatorRevoked(ctx, p)
+	if err != nil {
+		return "cannot check who proposed this: " + err.Error()
+	}
+	if revoked {
+		return fmt.Sprintf("refused: the API token that created this (%s) has been revoked; nothing was sent", p.CreatedBy)
+	}
+	return ""
 }
 
 // reportsFailure detects the `{"Success": false, ...}` results several send

@@ -113,7 +113,11 @@ func (h *outboxHandlers) decide(r *http.Request) (any, error) {
 	}
 	switch r.PathValue("decision") {
 	case "approve":
-		return h.ob.ApproveProposal(r.Context(), id)
+		p, err := h.ob.ApproveProposal(r.Context(), id)
+		if p.CreatedBy != "" {
+			addAuditDetail(r.Context(), "creator="+p.CreatedBy)
+		}
+		return p, err
 	case "reject":
 		return map[string]any{"id": id, "status": "rejected"}, h.ob.RejectProposal(r.Context(), id)
 	case "cancel":

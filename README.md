@@ -197,6 +197,20 @@ wpp-mcp outbox reject 7
 
 Proposals expire after 15 minutes. Read receipts, typing and presence skip the queue.
 
+Each proposal and scheduled message records who created it: `operator` (the operator token, which the stdio bridge also uses), `token:<name>` for a client token, or `operator:cli` for your own `wpp-mcp schedule`. `wpp-mcp outbox` and the `/outbox` page show it, and the audit entry of an approval names it. When a client token is revoked (directly, or with its OAuth grant), whatever it proposed or scheduled is refused when you approve it or when it comes due, and recorded as `failed`; nothing is swept at revocation time, so the check also covers tokens revoked by any other path.
+
+### Approving from your phone
+
+With `-self-approve` (`WPP_MCP_SELF_APPROVE=1`, needs `-write`), you can decide proposals in your own WhatsApp chat ("Message yourself"), typed on your phone or another linked device:
+
+```text
+outbox          list what awaits approval
+approve 7       the same as `wpp-mcp outbox approve 7`
+reject 7        the same as `wpp-mcp outbox reject 7`
+```
+
+The daemon replies in the same chat with the id and the outcome. Approval takes exactly the path of `wpp-mcp outbox approve`: access and send policy are checked again, and each proposal is claimed once. A message counts as a command only if it is live (not history sync), in your own chat, written by you, from a device other than the daemon's own linked device, and at most five minutes old. The device check is the key protection: nothing the daemon sends, including messages an AI asked it to send, can approve anything. Other text in that chat is ignored, so notes to self keep working. While `-self-approve` is on, MCP tools may not write to your own chat at all. Every decision is in the audit log as actor `operator:whatsapp`, with the proposal id and creator but no text. Replies count against `-max-sends-per-hour`.
+
 ### Send policy per chat
 
 Each chat has a send policy, separate from whether the AI can see it:
@@ -211,7 +225,19 @@ wpp-mcp access send 123456789@g.us none
 wpp-mcp access send "Ana" reset        # back to the daemon's default
 ```
 
-`wpp-mcp access list` shows the policy in its `SEND` column, and the `/access` page has a control per chat. Chats without a policy use the daemon's default: `confirm`, or `direct` with `-confirm-sends=false`. Tools that target no chat (privacy settings, `create_group`, status message) always use the default. A send policy never makes a hidden chat visible: a write to a hidden chat still answers "chat not found". Without `-write` no write tool is exposed, whatever the policies say.
+### Send windows
+
+A chat can also have hours when the AI may write to it, read in the daemon's time zone (`serve -timezone`, default the system zone). A window may wrap midnight:
+
+```bash
+wpp-mcp access window "Ana" 08:00-22:00
+wpp-mcp access window 123456789@g.us 22:00-06:00
+wpp-mcp access window "Ana" off
+```
+
+Outside the window, a message the AI sends (text, file, audio, reply, poll, contact card) is not sent but deferred to the next opening, still under the chat's send policy: `confirm` makes a proposal with that send time (approvable for at least 15 minutes even if the window opens sooner), `direct` schedules it at once, and `none` refuses it as usual. `schedule_message` moves a send time outside the window to its next opening. Every other write aimed at the chat (reactions, edits, deletions, read receipts, typing, group changes) is refused with the time the window opens. The tool result says the message was deferred and until when. The window is checked after the access check and the send policy, so a hidden chat still answers "chat not found". When a scheduled item comes due outside its chat's window (the window changed meanwhile), the scheduler moves it to the next opening instead of sending it. Your own `wpp-mcp schedule` ignores windows, and approving an immediate proposal sends it at once whatever the hour: both are your decision, not the AI's. The next opening is computed minute by minute on the real clock, so daylight-saving changes neither skip nor repeat an opening.
+
+`wpp-mcp access list` shows the policy in its `SEND` column and the window in its `WINDOW` column, and the `/access` page has a control per chat. Chats without a policy use the daemon's default: `confirm`, or `direct` with `-confirm-sends=false`. Tools that target no chat (privacy settings, `create_group`, status message) always use the default. A send policy never makes a hidden chat visible: a write to a hidden chat still answers "chat not found". Without `-write` no write tool is exposed, whatever the policies say.
 
 ### Scheduled messages
 
@@ -226,7 +252,7 @@ wpp-mcp outbox cancel 12       # withdraw a scheduled message (or a pending prop
 wpp-mcp outbox history         # outcomes: sent (with the message ID), failed, missed, cancelled
 ```
 
-The AI can do the same with the `schedule_message` tool, under the chat's send policy: `none` refuses it, `confirm` makes a proposal that you can approve until the send time and that is then scheduled, and `direct` schedules it at once. Your own `wpp-mcp schedule` needs no approval, but the chat must exist, be visible to the AI and not have send policy `none`.
+The AI can do the same with the `schedule_message` tool, under the chat's send policy: `none` refuses it, `confirm` makes a proposal that you can approve until the send time and that is then scheduled, and `direct` schedules it at once. Your own `wpp-mcp schedule` needs no approval and ignores send windows, but the chat must exist, be visible to the AI and not have send policy `none`. It works without a running daemon too: the message is then queued directly in the store, with the same checks, and the next `serve -write` sends it (if it starts within an hour of the send time).
 
 Send times must be in the future and at most 30 days ahead. At the send time the daemon checks access and the send policy again (a chat hidden meanwhile is not sent to), then sends through the usual rate limiter. Each message is claimed once, so it is never sent twice. Scheduled messages are kept in the encrypted database and survive restarts; one that came due while the daemon was down is still sent if it is at most one hour late, and marked `missed` otherwise. If the account is paired but momentarily disconnected, the daemon waits for the connection within that hour. A daemon started without `-write` neither exposes `schedule_message` nor sends scheduled messages; they stay queued until a `-write` daemon runs.
 
@@ -433,6 +459,8 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | `serve -oauth-redirect-uris` | `WPP_MCP_OAUTH_REDIRECT_URIS` | `https://claude.ai/api/mcp/auth_callback` | Comma-separated redirect URI allowlist, matched exactly |
 | | `WPP_MCP_TOKEN` | generated | Operator bearer token (else `<store>/token`); clients get their own with `wpp-mcp token create` |
 | `serve -write` | `WPP_MCP_WRITE` | off | Expose tools that send or change the account |
+| `serve -self-approve` | `WPP_MCP_SELF_APPROVE` | off | With `-write`, decide proposals from your own WhatsApp chat (see [Approving from your phone](#approving-from-your-phone)) |
+| `serve -timezone` | `WPP_MCP_TIMEZONE` | system zone | IANA time zone that per-chat send windows are read in (`wpp-mcp access window`) |
 | `serve -confirm-sends` | `WPP_MCP_CONFIRM_SENDS` | on | With `-write`, the default send policy for chats without one: `confirm` (on) or `direct` (off); see `wpp-mcp access send` |
 | `serve -tools` | `WPP_MCP_TOOLS` | `default` | Groups or tool names: `core`, `access`, `messaging`, `transcribe`, `labels`, `contacts`, `groups`, `privacy`, `polls`, `all` |
 | `serve -disable-tools` | `WPP_MCP_DISABLE_TOOLS` | | Groups or tool names to hide |

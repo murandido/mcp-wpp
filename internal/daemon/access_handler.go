@@ -18,6 +18,7 @@ type AccessStore interface {
 	SetAccessMode(ctx context.Context, mode string) error
 	SetChatAccess(ctx context.Context, jid, state, note string) error
 	SetChatSendPolicy(ctx context.Context, jid, policy string) error
+	SetChatSendWindow(ctx context.Context, jid, window string) error
 	ListAccess(ctx context.Context, query string, limit int) ([]store.AccessEntry, error)
 	ListAccessPage(ctx context.Context, opts store.AccessListOptions) (store.AccessListPage, error)
 	ChatsExist(ctx context.Context, jids []string) (map[string]bool, error)
@@ -47,6 +48,7 @@ func (h *accessHandlers) mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/access/mode", h.apiMode)
 	mux.HandleFunc("POST /admin/access/chat", h.apiChat)
 	mux.HandleFunc("POST /admin/access/send", h.apiSend)
+	mux.HandleFunc("POST /admin/access/window", h.apiWindow)
 	mux.HandleFunc("GET /admin/access/requests", h.apiRequests)
 	mux.HandleFunc("POST /admin/access/requests/{id}", h.apiDecide)
 
@@ -161,6 +163,22 @@ func (h *accessHandlers) apiSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"jid": body.JID, "send": body.Send})
+}
+
+// apiWindow sets a chat's send window ("08:00-22:00") or clears it ("off").
+func (h *accessHandlers) apiWindow(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		JID    string `json:"jid"`
+		Window string `json:"window"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := h.st.SetChatSendWindow(r.Context(), body.JID, body.Window); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"jid": body.JID, "window": body.Window})
 }
 
 func (h *accessHandlers) apiRequests(w http.ResponseWriter, r *http.Request) {

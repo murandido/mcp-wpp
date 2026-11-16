@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,8 +26,13 @@ be in the future and at most 30 days ahead. Your own schedules need no
 approval, but the chat must be visible to the AI and its send policy must not
 be "none": the daemon checks both again when it sends.
 
-Needs a running daemon started with -write. See and cancel scheduled messages
-with ` + "`wpp-mcp outbox`" + ` and ` + "`wpp-mcp outbox cancel <id>`" + `.
+Your own schedules ignore per-chat send windows (` + "`wpp-mcp access window`" + `):
+they are your decision, not the AI's.
+
+With a running daemon the message is scheduled through it. Without one, the
+store is opened directly and the message is queued there; a daemon started
+with -write sends it (if it starts within an hour of the send time). See and
+cancel scheduled messages with ` + "`wpp-mcp outbox`" + ` and ` + "`wpp-mcp outbox cancel <id>`" + `.
 `
 
 var (
@@ -116,25 +123,86 @@ func runSchedule(storeDir string, args []string) int {
 		return 2
 	}
 
-	dc, err := newDaemonClient(storeDir, "")
-	if err != nil || !daemonUp(dc) {
-		fmt.Fprintln(os.Stderr, "schedule: the daemon is not running; scheduled messages are sent by `wpp-mcp serve -write`")
-		return 1
-	}
-	api := &httpAccess{dc: dc}
 	ctx, cancel := quick()
 	defer cancel()
-	jid := resolveChatRef(ctx, api, ref, "schedule")
-	if jid == "" {
-		return 1
-	}
 	var p store.Proposal
-	body := map[string]string{"chat": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}
-	if err := api.call(ctx, http.MethodPost, "/admin/outbox/schedule", body, &p); err != nil {
-		fmt.Fprintf(os.Stderr, "schedule: %v (is the daemon running with -write?)\n", err)
-		return 1
+	if dc, err := newDaemonClient(storeDir, ""); err == nil && daemonUp(dc) {
+		api := &httpAccess{dc: dc}
+		jid := resolveChatRef(ctx, api, ref, "schedule")
+		if jid == "" {
+			return 1
+		}
+		body := map[string]string{"chat": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}
+		if err := api.call(ctx, http.MethodPost, "/admin/outbox/schedule", body, &p); err != nil {
+			fmt.Fprintf(os.Stderr, "schedule: %v (is the daemon running with -write?)\n", err)
+			return 1
+		}
+	} else {
+		var code int
+		if p, code = scheduleOffline(ctx, storeDir, ref, message, sendAt); code != 0 {
+			return code
+		}
+		fmt.Fprintln(os.Stderr, "the daemon is not running: queued in the store; `wpp-mcp serve -write` sends it (it must be running within an hour of the send time)")
 	}
 	fmt.Printf("scheduled #%d for %s (%s UTC)\n", p.ID, sendAt.In(loc).Format("2006-01-02 15:04 MST"), sendAt.UTC().Format("2006-01-02 15:04"))
 	fmt.Fprintf(os.Stderr, "Cancel with `wpp-mcp outbox cancel %d`.\n", p.ID)
 	return 0
+}
+
+// scheduleOffline queues a message directly in the store when no daemon is
+// reachable, with the checks the daemon applies to operator schedules: the
+// chat must exist, be visible and not have send policy none. The scheduler
+// of the next -write daemon checks them again at send time.
+func scheduleOffline(ctx context.Context, storeDir, ref, message string, sendAt time.Time) (store.Proposal, int) {
+	lock, err := store.TryLock(storeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "schedule: daemon not reachable and the store is locked: %v\n", err)
+		return store.Proposal{}, 1
+	}
+	defer lock.Release()
+	st, _, err := openStore(storeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "schedule: %v\n", err)
+		return store.Proposal{}, 1
+	}
+	defer st.Close()
+	jid := resolveChatRef(ctx, &directAccess{st: st, release: func() {}}, ref, "schedule")
+	if jid == "" {
+		return store.Proposal{}, 1
+	}
+	p, err := scheduleInStore(ctx, st, jid, message, sendAt, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "schedule: %v\n", err)
+		return store.Proposal{}, 1
+	}
+	return p, 0
+}
+
+// scheduleInStore applies the operator-schedule checks and queues the item,
+// recorded as created by store.CreatorOperatorCLI so send windows do not
+// apply.
+func scheduleInStore(ctx context.Context, st *store.Store, jid, message string, sendAt, now time.Time) (store.Proposal, error) {
+	if c, err := st.GetChat(ctx, jid, false); err != nil || c == nil {
+		return store.Proposal{}, fmt.Errorf("no cached chat %s; pass the JID of an existing chat (see `wpp-mcp access list`)", jid)
+	}
+	if ok, err := st.ChatAllowed(ctx, jid); err != nil || !ok {
+		return store.Proposal{}, fmt.Errorf("chat %s is hidden by the access policy, and scheduled messages are only sent to visible chats; allow it first with `wpp-mcp access allow %s`", jid, jid)
+	}
+	if policy, err := st.ChatSendPolicy(ctx, jid); err != nil {
+		return store.Proposal{}, err
+	} else if policy == store.SendNone {
+		return store.Proposal{}, fmt.Errorf("chat %s has send policy \"none\"; change it first with `wpp-mcp access send %s confirm`", jid, jid)
+	}
+	args := map[string]any{"recipient": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}
+	raw, _ := json.Marshal(args)
+	target := jid
+	if name := st.FindChatName(jid); name != "" && name != jid {
+		target = fmt.Sprintf("%s (%s)", name, jid)
+	}
+	summary := fmt.Sprintf("schedule_message → %s\n  message: %s\n  send_at: %s", target, message, sendAt.Format(time.RFC3339))
+	p, err := st.ScheduleMessage(store.WithCreator(ctx, store.CreatorOperatorCLI), "schedule_message", string(raw), summary, sendAt, now)
+	if err != nil {
+		return store.Proposal{}, err
+	}
+	return *p, nil
 }

@@ -22,10 +22,10 @@ type daemonRun struct {
 	out *bytes.Buffer
 }
 
-func startServe(t *testing.T, bin, store string, global []string) (*daemonRun, error) {
+func startServe(t *testing.T, bin, store string, global []string, serveArgs ...string) (*daemonRun, error) {
 	t.Helper()
 	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-	args := append(append([]string{"-store", store}, global...), "serve", "-addr", addr)
+	args := append(append(append([]string{"-store", store}, global...), "serve", "-addr", addr), serveArgs...)
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(), "WPP_MCP_KEY_FILE=") // only -key-file counts here
 	var out bytes.Buffer

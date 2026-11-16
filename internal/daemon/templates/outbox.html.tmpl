@@ -30,9 +30,9 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 <div class="card">
 <pre style="white-space:pre-wrap;margin:0 0 .75rem;font-family:ui-monospace,monospace">{{.Summary}}</pre>
 <div class="row">
-{{if .SendAt}}<small>#{{.ID}} · to be sent {{.SendAt.Local.Format "2006-01-02 15:04 MST"}}</small>
+{{if .SendAt}}<small>#{{.ID}} · by {{or .CreatedBy "unknown"}} · to be sent {{.SendAt.Local.Format "2006-01-02 15:04 MST"}}</small>
 <form class="inline" method="post" action="/outbox/{{.ID}}/approve"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="go" type="submit">Approve schedule</button></form>
-{{else}}<small>#{{.ID}} · expires {{.ExpiresAt.Local.Format "15:04:05"}}</small>
+{{else}}<small>#{{.ID}} · by {{or .CreatedBy "unknown"}} · expires {{.ExpiresAt.Local.Format "15:04:05"}}</small>
 <form class="inline" method="post" action="/outbox/{{.ID}}/approve"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="go" type="submit">Approve and send</button></form>{{end}}
 <form class="inline" method="post" action="/outbox/{{.ID}}/reject"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="no" type="submit">Reject</button></form>
 </div>
@@ -45,7 +45,7 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 <div class="card">
 <pre style="white-space:pre-wrap;margin:0 0 .75rem;font-family:ui-monospace,monospace">{{.Summary}}</pre>
 <div class="row">
-<small>#{{.ID}} · sends {{if .SendAt}}{{.SendAt.Local.Format "2006-01-02 15:04 MST"}}{{end}}</small>
+<small>#{{.ID}} · by {{or .CreatedBy "unknown"}} · sends {{if .SendAt}}{{.SendAt.Local.Format "2006-01-02 15:04 MST"}}{{end}}</small>
 <form class="inline" method="post" action="/outbox/{{.ID}}/cancel"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="no" type="submit">Cancel</button></form>
 </div>
 </div>
@@ -53,9 +53,9 @@ input[type=search]{font:inherit;padding:.45rem .7rem;border-radius:.45rem;border
 </section>
 <section class="card">
 <h2>Recent</h2>
-<table><tr><th>#</th><th>Action</th><th>Status</th></tr>
-{{range .Recent}}<tr><td>{{.ID}}</td><td><small style="white-space:pre-wrap">{{.Summary}}</small>{{if .Result}}<br><small class="muted">{{.Result}}</small>{{end}}</td><td><span class="pill">{{.Status}}</span></td></tr>
-{{else}}<tr><td colspan="3" class="muted">No proposals yet.</td></tr>{{end}}
+<table><tr><th>#</th><th>Action</th><th class="hide-sm">By</th><th>Status</th></tr>
+{{range .Recent}}<tr><td>{{.ID}}</td><td><small style="white-space:pre-wrap">{{.Summary}}</small>{{if .Result}}<br><small class="muted">{{.Result}}</small>{{end}}</td><td class="hide-sm"><small>{{or .CreatedBy "unknown"}}</small></td><td><span class="pill">{{.Status}}</span></td></tr>
+{{else}}<tr><td colspan="4" class="muted">No proposals yet.</td></tr>{{end}}
 </table>
 </section>
 <p><small>From a terminal: <code>wpp-mcp outbox</code>, <code>wpp-mcp outbox approve &lt;id&gt;</code>, <code>wpp-mcp outbox cancel &lt;id&gt;</code>, <code>wpp-mcp schedule</code>.</small></p>

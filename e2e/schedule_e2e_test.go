@@ -3,8 +3,11 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -174,5 +177,63 @@ func TestSchedule_ReadOnlyHasNoScheduling(t *testing.T) {
 	h.allow(t, "Alice")
 	if out, err := h.cli(t, "schedule", "Alice", time.Now().Add(time.Hour).Format(time.RFC3339), "x"); err == nil {
 		t.Fatalf("scheduling on a read-only daemon must fail: %q", out)
+	}
+}
+
+// Without a daemon, `wpp-mcp schedule` queues the message in the store, and
+// the next -write daemon sends it.
+func TestSchedule_OfflineQueuedThenSent(t *testing.T) {
+	bin := binPath(t)
+	dir := t.TempDir()
+	key := keygen(t, bin)
+	keys, err := crypto.LoadKeyFile(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.OpenWithKeys(dir, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.StoreChat(aliceJID, "Alice", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+
+	offline := func(args ...string) (string, error) {
+		cmd := exec.Command(bin, append([]string{"-store", dir, "-key-file", key}, args...)...)
+		// Point the CLI at a port nobody listens on, so it never finds a
+		// daemon (not even one the developer runs on the default port).
+		cmd.Env = append(os.Environ(), "WPP_MCP_KEY_FILE=", fmt.Sprintf("WPP_MCP_ADDR=127.0.0.1:%d", freePort(t)))
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	at := time.Now().Add(4 * time.Second).UTC().Format(time.RFC3339)
+	if out, err := offline("schedule", "Alice", at, "offline", "hello"); err == nil || !strings.Contains(out, "hidden") {
+		t.Fatalf("a hidden chat must be refused offline too: %q %v", out, err)
+	}
+	if out, err := offline("access", "allow", "Alice"); err != nil {
+		t.Fatalf("allow: %q %v", out, err)
+	}
+	out, err := offline("schedule", "Alice", at, "offline", "hello")
+	if err != nil || !strings.Contains(out, "scheduled #1") || !strings.Contains(out, "queued in the store") {
+		t.Fatalf("offline schedule: %q %v", out, err)
+	}
+
+	d, err := startServe(t, bin, dir, []string{"-key-file", key}, "-write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(6 * time.Second)
+	d.stop()
+
+	st, err = store.OpenWithKeys(dir, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	p, err := st.GetProposal(context.Background(), 1)
+	// The test daemon is unpaired, so the send itself fails; it was tried.
+	if err != nil || p.Status != store.OutboxFailed || !strings.Contains(p.Result, "Not connected") || p.CreatedBy != store.CreatorOperatorCLI {
+		t.Fatalf("offline item after the daemon ran: %+v %v", p, err)
 	}
 }

@@ -72,3 +72,31 @@ func TestAccessPage_SendPolicyNeedsCSRF(t *testing.T) {
 		t.Fatalf("form post did not set the policy (status %d): %q", resp.StatusCode, p)
 	}
 }
+
+func TestAccessAPI_SendWindow(t *testing.T) {
+	base, st := accessDaemon(t)
+	ctx := context.Background()
+	if code, _ := jsonCall(t, rawClient, http.MethodPost, base+"/admin/access/window", `{"jid":"`+accAlice+`","window":"08:00-22:00"}`); code != http.StatusUnauthorized {
+		t.Fatalf("window without token: %d", code)
+	}
+	if code, _ := jsonCall(t, http.DefaultClient, http.MethodPost, base+"/admin/access/window", `{"jid":"`+accAlice+`","window":"22:00-06:00"}`); code != http.StatusOK {
+		t.Fatalf("set window: %d", code)
+	}
+	if w, _ := st.ChatSendWindow(ctx, accAlice); w == nil || w.String() != "22:00-06:00" {
+		t.Fatalf("window = %v", w)
+	}
+	if code, _ := jsonCall(t, http.DefaultClient, http.MethodPost, base+"/admin/access/window", `{"jid":"`+accAlice+`","window":"08:00-08:00"}`); code != http.StatusBadRequest {
+		t.Fatalf("empty window accepted: %d", code)
+	}
+	_, out := jsonCall(t, http.DefaultClient, http.MethodGet, base+"/admin/access?query=Alice", "")
+	chats, _ := out["chats"].([]any)
+	if len(chats) != 1 || chats[0].(map[string]any)["send_window"] != "22:00-06:00" {
+		t.Fatalf("list does not report the window: %v", out)
+	}
+	if code, _ := jsonCall(t, http.DefaultClient, http.MethodPost, base+"/admin/access/window", `{"jid":"`+accAlice+`","window":"off"}`); code != http.StatusOK {
+		t.Fatalf("clear window: %d", code)
+	}
+	if w, _ := st.ChatSendWindow(ctx, accAlice); w != nil {
+		t.Fatalf("window not cleared: %v", w)
+	}
+}

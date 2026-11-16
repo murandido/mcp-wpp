@@ -34,7 +34,7 @@ var auditChatFields = []string{"jid", "chat_jid"}
 var auditDetailFields = map[string]bool{
 	"mode": true, "state": true, "decision": true, "approve": true,
 	"name": true, "scopes": true, "chats": true, "expires_at": true,
-	"code": true, "days": true, "send": true,
+	"code": true, "days": true, "send": true, "window": true,
 }
 
 // maxAuditChats bounds the entries one request can produce. The /access
@@ -84,6 +84,8 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 		fields := peekFields(r)
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
+		notes := &auditNotes{}
+		r = r.WithContext(context.WithValue(r.Context(), auditNotesKey{}, notes))
 		next.ServeHTTP(rec, r)
 		if r.Pattern == "" {
 			return // no route matched
@@ -127,6 +129,7 @@ func auditAdmin(next http.Handler, al AuditLog) http.Handler {
 		if len(chats) > 1 {
 			detail = append(detail, fmt.Sprintf("batch=%d", len(chats)))
 		}
+		detail = append(detail, notes.list...)
 		if id.Via == "session" {
 			detail = append(detail, "via=browser")
 		}
@@ -162,6 +165,21 @@ func nonEmpty(vs []string) []string {
 		}
 	}
 	return out
+}
+
+// auditNotes collects extra detail a handler adds to its own audit entry
+// (addAuditDetail), such as who created an approved proposal.
+type auditNotes struct{ list []string }
+
+type auditNotesKey struct{}
+
+// addAuditDetail appends a key=value note to the audit entry of the current
+// operator request. Only fixed keys and non-personal values belong here
+// (never message text). It does nothing outside auditAdmin.
+func addAuditDetail(ctx context.Context, kv string) {
+	if n, ok := ctx.Value(auditNotesKey{}).(*auditNotes); ok {
+		n.list = append(n.list, kv)
+	}
 }
 
 // peekFields reads the request's JSON or form fields without consuming the

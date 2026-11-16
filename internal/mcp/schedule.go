@@ -39,7 +39,7 @@ type scheduleMessageArgs struct {
 
 func (s *Server) registerScheduleMessage() {
 	tool := mcp.NewTool("schedule_message",
-		mcp.WithDescription("Schedule a WhatsApp text message for the daemon to send at a future time (at most 30 days ahead); nothing is sent now. Depending on the chat's send policy the user must first approve it (returns `{proposal_id, status: \"awaiting_approval\", send_at}`) or it is scheduled at once (returns `{scheduled_id, status: \"scheduled\", send_at}`); the user can cancel it with `wpp-mcp outbox cancel <id>` until it is sent. Use send_message to send right away."),
+		mcp.WithDescription("Schedule a WhatsApp text message for the daemon to send at a future time (at most 30 days ahead); nothing is sent now. Depending on the chat's send policy the user must first approve it (returns `{proposal_id, status: \"awaiting_approval\", send_at}`) or it is scheduled at once (returns `{scheduled_id, status: \"scheduled\", send_at}`); a send_at outside the chat's send window moves to its next opening (`deferred: true`); the user can cancel it with `wpp-mcp outbox cancel <id>` until it is sent. Use send_message to send right away."),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description(recipientDesc)),
 		mcp.WithString("message", mcp.Required(), mcp.Description("message body text")),
 		mcp.WithString("send_at", mcp.Required(), mcp.Description("when to send, RFC 3339 with a UTC offset, e.g. `2026-11-16T06:00:00-03:00`; must be in the future and at most 30 days ahead")),
@@ -60,6 +60,15 @@ func (s *Server) registerScheduleMessage() {
 		if err := store.ValidateSendAt(sendAt, now); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
+		// A send time outside the chat's send window moves to its next
+		// opening.
+		var windowNote string
+		if w, err := s.sendWindowFor(ctx, a.Recipient); err != nil {
+			return mcp.NewToolResultError("cannot read the send window: " + err.Error()), nil
+		} else if w != nil && !w.Contains(sendAt, s.location()) {
+			sendAt = w.NextOpening(sendAt, s.location())
+			windowNote = fmt.Sprintf("send_at was outside the chat's send window (%s) and was moved to its next opening", s.windowText(w))
+		}
 		args := map[string]any{"recipient": a.Recipient, "message": a.Message, "send_at": sendAt.Format(time.RFC3339)}
 		raw, _ := json.Marshal(args)
 		summary := s.summarise("schedule_message", args)
@@ -70,27 +79,36 @@ func (s *Server) registerScheduleMessage() {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 			s.wakeScheduler()
-			return resultJSON(map[string]any{
+			return resultJSON(withNote(map[string]any{
 				"scheduled_id": p.ID,
 				"status":       store.OutboxScheduled,
 				"send_at":      p.SendAt,
 				"summary":      p.Summary,
 				"next_step":    fmt.Sprintf("It will be sent at send_at. The user can cancel it with `wpp-mcp outbox cancel %d`.", p.ID),
-			})
+			}, windowNote))
 		}
 		p, err := st.CreateScheduledProposal(ctx, "schedule_message", string(raw), summary, sendAt, now)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return resultJSON(map[string]any{
+		return resultJSON(withNote(map[string]any{
 			"proposal_id": p.ID,
 			"status":      "awaiting_approval",
 			"send_at":     p.SendAt,
 			"expires_at":  p.ExpiresAt,
 			"summary":     p.Summary,
 			"next_step":   fmt.Sprintf("Nothing is scheduled yet. Ask the user to approve with `wpp-mcp outbox approve %d` or on the /outbox page before the send time.", p.ID),
-		})
+		}, windowNote))
 	}))
+}
+
+// withNote adds a deferral note to a result, when there is one.
+func withNote(m map[string]any, note string) map[string]any {
+	if note != "" {
+		m["deferred"] = true
+		m["reason"] = note
+	}
+	return m
 }
 
 // ScheduleMessage schedules a text message on the operator's behalf
@@ -119,8 +137,8 @@ func (s *Server) ScheduleMessage(ctx context.Context, ref, message string, sendA
 	}
 	args := map[string]any{"recipient": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}
 	raw, _ := json.Marshal(args)
-	summary := s.summarise("schedule_message", args) + "\n  scheduled by: operator"
-	p, err := st.ScheduleMessage(ctx, "schedule_message", string(raw), summary, sendAt, s.clock())
+	summary := s.summarise("schedule_message", args)
+	p, err := st.ScheduleMessage(store.WithCreator(ctx, store.CreatorOperatorCLI), "schedule_message", string(raw), summary, sendAt, s.clock())
 	if err != nil {
 		return store.Proposal{}, err
 	}
@@ -188,6 +206,12 @@ func (s *Server) RunDueScheduled(ctx context.Context) ([]store.Proposal, error) 
 	}
 	var done []store.Proposal
 	for _, item := range due {
+		// The chat's send window may have changed since it was scheduled.
+		if moved, err := s.deferIfClosed(ctx, item, now); err != nil {
+			return done, err
+		} else if moved {
+			continue
+		}
 		p, err := st.ClaimScheduled(ctx, item.ID, now)
 		if errors.Is(err, store.ErrProposalNotPending) {
 			continue // cancelled or taken meanwhile
@@ -208,14 +232,21 @@ func (s *Server) RunDueScheduled(ctx context.Context) ([]store.Proposal, error) 
 
 // sendScheduled sends one claimed item through the normal send path (rate
 // limiter included), after checking that its chat is still visible and
-// still allows sends.
+// still allows sends. A schedule_message item is a plain text send; a call
+// deferred by a send window runs its tool as an approved proposal would.
 func (s *Server) sendScheduled(ctx context.Context, p *store.Proposal) (failed bool, result string) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(p.ArgsJSON), &args); err != nil {
 		return true, "corrupt scheduled message: " + err.Error()
 	}
-	if reason := s.writeBlocked(ctx, "schedule_message", args); reason != "" {
+	if reason := s.creatorBlocked(ctx, p); reason != "" {
 		return true, reason
+	}
+	if reason := s.writeBlocked(ctx, p.Tool, args); reason != "" {
+		return true, reason
+	}
+	if p.Tool != "schedule_message" {
+		return s.execute(ctx, p.Tool, args)
 	}
 	recipient, _ := args["recipient"].(string)
 	message, _ := args["message"].(string)

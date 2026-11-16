@@ -60,7 +60,7 @@ func runOutbox(storeDir string, args []string) int {
 			return 0
 		}
 		for _, p := range out.Proposals {
-			fmt.Printf("#%d  [%s]  %s\n%s\n", p.ID, p.Status, outboxWhen(p), p.Summary)
+			fmt.Printf("#%d  [%s]  %s  by %s\n%s\n", p.ID, p.Status, outboxWhen(p), creatorText(p), p.Summary)
 			if p.Result != "" {
 				fmt.Printf("  result: %s\n", p.Result)
 			}
@@ -118,6 +118,14 @@ func outboxWhen(p store.Proposal) string {
 		return "expires " + p.ExpiresAt.Local().Format("15:04:05")
 	}
 	return p.CreatedAt.Local().Format("2006-01-02 15:04")
+}
+
+// creatorText names who created an item for the listing.
+func creatorText(p store.Proposal) string {
+	if p.CreatedBy == "" {
+		return "unknown"
+	}
+	return p.CreatedBy
 }
 
 // localAndUTC renders t in the local zone with its UTC time alongside.

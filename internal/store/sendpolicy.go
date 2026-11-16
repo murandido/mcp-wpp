@@ -28,13 +28,11 @@ import (
 // other), needs no migration of existing rows, and is created by a plain
 // CREATE TABLE IF NOT EXISTS on old and new databases alike.
 
-const sendPolicySchema = `
-CREATE TABLE IF NOT EXISTS chat_send_policy (
-	jid        TEXT PRIMARY KEY,
-	policy     TEXT NOT NULL CHECK (policy IN ('none', 'confirm', 'direct')),
-	decided_at TIMESTAMP NOT NULL
-);
-`
+//
+// The same row holds the chat's send window (sendwindow.go); either may be
+// unset, and a row with neither is deleted.
+
+const sendPolicySchema = sendPolicyTableV2
 
 // Send policies. SendDefault means no explicit decision.
 const (
@@ -58,8 +56,10 @@ func (s *Store) SetChatSendPolicy(ctx context.Context, jid, policy string) error
 	}
 	switch {
 	case policy == SendDefault || policy == "reset" || policy == "default":
-		_, err := s.db.ExecContext(ctx, "DELETE FROM chat_send_policy WHERE jid = ?", jid)
-		return err
+		if _, err := s.db.ExecContext(ctx, "UPDATE chat_send_policy SET policy = NULL WHERE jid = ?", jid); err != nil {
+			return err
+		}
+		return s.pruneSendPolicy(ctx, jid)
 	case ValidSendPolicy(policy):
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO chat_send_policy (jid, policy, decided_at) VALUES (?, ?, ?)
@@ -73,7 +73,7 @@ func (s *Store) SetChatSendPolicy(ctx context.Context, jid, policy string) error
 
 // ChatSendPolicy returns the explicit send policy for jid, or SendDefault.
 func (s *Store) ChatSendPolicy(ctx context.Context, jid string) (string, error) {
-	var p string
+	var p sql.NullString
 	err := s.db.QueryRowContext(ctx, "SELECT policy FROM chat_send_policy WHERE jid = ?", jid).Scan(&p)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SendDefault, nil
@@ -81,7 +81,7 @@ func (s *Store) ChatSendPolicy(ctx context.Context, jid string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("read send policy: %w", err)
 	}
-	return p, nil
+	return p.String, nil
 }
 
 // applySendingSchema creates the send-policy table and brings the outbox
@@ -90,8 +90,14 @@ func applySendingSchema(db *sql.DB) error {
 	if _, err := db.Exec(sendPolicySchema); err != nil {
 		return fmt.Errorf("apply send policy schema: %w", err)
 	}
+	if err := migrateSendPolicy(db); err != nil {
+		return err
+	}
 	if _, err := db.Exec(outboxSchema); err != nil {
 		return fmt.Errorf("apply outbox schema: %w", err)
 	}
-	return migrateOutbox(db)
+	if err := migrateOutbox(db); err != nil {
+		return err
+	}
+	return migrateOutboxCreator(db)
 }
