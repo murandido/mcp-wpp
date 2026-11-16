@@ -506,6 +506,7 @@ make build          # needs SQLCipher; see Native above
 make lint test e2e smoke
 make container-test # the full suite in Debian with SQLCipher, no local install needed
 make docs           # regenerate docs/tools.md
+make fuzz           # every fuzz target for 20s (FUZZTIME=5m for longer); CI fuzzes weekly
 ```
 
 Tests never touch a real WhatsApp account. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).

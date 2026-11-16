@@ -285,10 +285,10 @@ func Verify(ctx context.Context, archive string, keys *crypto.Keys, tempDir stri
 
 // safeEntryName accepts only plain relative archive paths: no absolute
 // paths, no ".." element, no backslashes and nothing that is not already
-// clean. A crafted archive must never write outside the staging directory
-// ("zip slip").
+// clean, and never "." (the directory itself). A crafted archive must never
+// write outside the staging directory ("zip slip").
 func safeEntryName(name string) bool {
-	return name != "" &&
+	return name != "" && name != "." &&
 		!strings.Contains(name, "..") &&
 		!strings.Contains(name, `\`) &&
 		path.Clean(name) == name &&

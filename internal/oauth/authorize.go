@@ -3,6 +3,7 @@ package oauth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/hex"
@@ -120,6 +121,13 @@ func hashCode(code string) string {
 func pkceS256(verifier string) string {
 	h := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+// pkceMatches reports whether verifier is a well-formed RFC 7636 verifier
+// whose S256 transform equals challenge, compared in constant time.
+func pkceMatches(verifier, challenge string) bool {
+	return verifierPattern.MatchString(verifier) &&
+		subtle.ConstantTimeCompare([]byte(pkceS256(verifier)), []byte(challenge)) == 1
 }
 
 var (
