@@ -25,6 +25,8 @@ const (
 	routeAccessMode   = "POST /admin/access/mode"
 	routeAccessChat   = "POST /admin/access/chat"
 	routeAccessSend   = "POST /admin/access/send"
+	routeAccessWindow = "POST /admin/access/window"
+	routeSchedule     = "POST /admin/outbox/schedule"
 	routeAccessDecide = "POST /admin/access/requests/{id}"
 	routeClientCreate = "POST /admin/tokens"
 	routeClientRevoke = "POST /admin/tokens/{ref}/revoke"
