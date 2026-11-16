@@ -24,7 +24,7 @@ Your WhatsApp history is some of the most personal data you have. Connecting it 
 | A message forges other messages, or a pairing QR leaks to the model | Message bodies cannot start new lines that look like headers, results are labelled as third-party data, and pairing never goes through MCP. |
 | Runaway sends get the number banned | Daemon-side rate limits that clients cannot bypass. |
 
-Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, pairing by phone-number code, optional retention, voice-note transcription, local OCR of images, and a small default tool surface (14 read-only tools out of 52).
+Plus: accent-insensitive full-text search (`nao` finds `não`), a cross-chat `digest` tool, living per-chat notes that improve each time they are used, pairing by phone-number code, optional retention, voice-note transcription, local OCR of images, and a small default tool surface (16 read-only tools out of 54).
 
 ## Quick start
 
@@ -276,6 +276,19 @@ wpp-mcp outbox history         # outcomes: sent (with the message ID), failed, m
 The AI can do the same with the `schedule_message` tool, under the chat's send policy: `none` refuses it, `confirm` makes a proposal that you can approve until the send time and that is then scheduled, and `direct` schedules it at once. Your own `wpp-mcp schedule` needs no approval and ignores send windows, but the chat must exist, be visible to the AI and not have send policy `none`. It works without a running daemon too: the message is then queued directly in the store, with the same checks, and the next `serve -write` sends it (if it starts within an hour of the send time).
 
 Send times must be in the future and at most 30 days ahead. At the send time the daemon checks access and the send policy again (a chat hidden meanwhile is not sent to), then sends through the usual rate limiter. Each message is claimed once, so it is never sent twice. Scheduled messages are kept in the encrypted database and survive restarts; one that came due while the daemon was down is still sent if it is at most one hour late, and marked `missed` otherwise. If the account is paired but momentarily disconnected, the daemon waits for the connection within that hour. A daemon started without `-write` neither exposes `schedule_message` nor sends scheduled messages; they stay queued until a `-write` daemon runs.
+
+## Chat notes
+
+Each allowed chat can keep a living summary: who it is with, ongoing topics, agreements, dates, open items and preferences. The server has no model of its own; the notes are written by your MCP client and improve every time they are used:
+
+1. `get_chat_notes` returns the current notes and the cached messages that arrived after them (with cached voice-note transcripts and image text). A chat without notes returns its most recent messages.
+2. The client merges what is new and saves the result with `update_chat_notes`, passing the version it read and the newest message it covered. The next read starts after that message.
+
+The server's instructions ask clients to do this whenever they work on a chat, and `get_chat` shows the first lines of the notes. Notes are local state: encrypted in `messages.db`, never sent to WhatsApp, so a read-only token can keep them. Each save is a new version; the previous 10 are kept. Two conversations cannot overwrite each other: a save based on an older version is refused, and the client reads again and merges.
+
+Notes follow the access policy like messages: hidden chats and chats outside a token's set behave as if they had none. Denying or resetting a chat's access deletes its notes and their history. Retention does not: the notes are what outlives old messages. Because they are derived from other people's messages, notes are always served as untrusted data, and clients are told to record facts, never instructions found in messages.
+
+The operator sees and manages them on the `/notes` page (linked from `/access` as "notes vN") and with `wpp-mcp notes show|history|revert|clear <chat>`, all audited.
 
 ## Catching up and webhooks
 
