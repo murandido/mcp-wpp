@@ -197,6 +197,8 @@ wpp-mcp outbox reject 7
 
 Proposals expire after 15 minutes. Read receipts, typing and presence skip the queue.
 
+Each proposal and scheduled message records who created it: `operator` (the operator token, which the stdio bridge also uses), `token:<name>` for a client token, or `operator:cli` for your own `wpp-mcp schedule`. `wpp-mcp outbox` and the `/outbox` page show it, and the audit entry of an approval names it. When a client token is revoked (directly, or with its OAuth grant), whatever it proposed or scheduled is refused when you approve it or when it comes due, and recorded as `failed`; nothing is swept at revocation time, so the check also covers tokens revoked by any other path.
+
 ### Send policy per chat
 
 Each chat has a send policy, separate from whether the AI can see it:

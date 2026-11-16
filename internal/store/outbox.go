@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/murandido/mcp-wpp/internal/auth"
 )
 
 // Outbox of proposed account actions awaiting the user's approval, and of
@@ -28,7 +30,9 @@ CREATE TABLE IF NOT EXISTS outbox (
 	created_at  TIMESTAMP NOT NULL,
 	expires_at  TIMESTAMP NOT NULL,
 	decided_at  TIMESTAMP,
-	send_at     TIMESTAMP
+	send_at     TIMESTAMP,
+	created_by  TEXT,
+	created_by_token INTEGER
 );
 `
 
@@ -62,6 +66,48 @@ type Proposal struct {
 	DecidedAt *time.Time `json:"decided_at,omitempty"`
 	// SendAt is set for scheduled messages: when the daemon sends it.
 	SendAt *time.Time `json:"send_at,omitempty"`
+	// CreatedBy is who made the item: "operator", "token:<name>" or
+	// CreatorOperatorCLI; "" for items made before it was recorded.
+	CreatedBy string `json:"created_by,omitempty"`
+	// CreatorTokenID is the client token that made the item, 0 for the
+	// operator. Approving or sending an item whose token has been revoked
+	// is refused (see CreatorRevoked).
+	CreatorTokenID int64 `json:"created_by_token_id,omitempty"`
+}
+
+// CreatorOperatorCLI marks items the operator scheduled with `wpp-mcp
+// schedule`. MCP calls made with the operator token are recorded as
+// "operator", so the two stay distinguishable.
+const CreatorOperatorCLI = "operator:cli"
+
+type creatorKey struct{}
+
+// WithCreator overrides the creator recorded for items created with ctx
+// (operator commands). Without it, the creator is the caller on ctx
+// (auth.Caller).
+func WithCreator(ctx context.Context, actor string) context.Context {
+	return context.WithValue(ctx, creatorKey{}, actor)
+}
+
+// creatorFrom returns the actor and client token ID (nil for none) to
+// record for a new item.
+func creatorFrom(ctx context.Context) (string, any) {
+	if a, ok := ctx.Value(creatorKey{}).(string); ok && a != "" {
+		return a, nil
+	}
+	id := auth.Caller(ctx)
+	if id.TokenID != 0 {
+		return id.Actor(), id.TokenID
+	}
+	return id.Actor(), nil
+}
+
+func withCreator(p *Proposal, by string, tokenID any) *Proposal {
+	p.CreatedBy = by
+	if t, ok := tokenID.(int64); ok {
+		p.CreatorTokenID = t
+	}
+	return p
 }
 
 // ErrProposalNotPending is returned when deciding a proposal that is not
@@ -88,21 +134,22 @@ func (s *Store) CreateProposal(ctx context.Context, tool, argsJSON, summary stri
 		return nil, fmt.Errorf("there are already %d actions awaiting approval; ask the user to review them first", pending)
 	}
 	now := time.Now().UTC()
+	by, tokenID := creatorFrom(ctx)
 	res, err := s.db.ExecContext(ctx,
-		"INSERT INTO outbox (tool, args_json, summary, status, created_at, expires_at) VALUES (?, ?, ?, 'pending', ?, ?)",
-		tool, argsJSON, summary, now, now.Add(ProposalTTL))
+		"INSERT INTO outbox (tool, args_json, summary, status, created_at, expires_at, created_by, created_by_token) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+		tool, argsJSON, summary, now, now.Add(ProposalTTL), by, tokenID)
 	if err != nil {
 		return nil, fmt.Errorf("create proposal: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return &Proposal{ID: id, Tool: tool, ArgsJSON: argsJSON, Summary: summary, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(ProposalTTL)}, nil
+	return withCreator(&Proposal{ID: id, Tool: tool, ArgsJSON: argsJSON, Summary: summary, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(ProposalTTL)}, by, tokenID), nil
 }
 
 func scanProposal(row interface{ Scan(...any) error }) (Proposal, error) {
 	var p Proposal
 	var result sql.NullString
 	var decided, sendAt sql.NullTime
-	err := row.Scan(&p.ID, &p.Tool, &p.ArgsJSON, &p.Summary, &p.Status, &result, &p.CreatedAt, &p.ExpiresAt, &decided, &sendAt)
+	err := row.Scan(&p.ID, &p.Tool, &p.ArgsJSON, &p.Summary, &p.Status, &result, &p.CreatedAt, &p.ExpiresAt, &decided, &sendAt, &p.CreatedBy, &p.CreatorTokenID)
 	p.Result = result.String
 	if decided.Valid {
 		t := decided.Time
@@ -115,7 +162,7 @@ func scanProposal(row interface{ Scan(...any) error }) (Proposal, error) {
 	return p, err
 }
 
-const proposalColumns = "id, tool, args_json, summary, status, result, created_at, expires_at, decided_at, send_at"
+const proposalColumns = "id, tool, args_json, summary, status, result, created_at, expires_at, decided_at, send_at, COALESCE(created_by, ''), COALESCE(created_by_token, 0)"
 
 // ListProposals returns proposals with status ("" for all; a comma-separated
 // list such as "pending,scheduled" for several), newest first.
@@ -193,4 +240,24 @@ func (s *Store) RejectProposal(ctx context.Context, id int64) error {
 		return ErrProposalNotPending
 	}
 	return nil
+}
+
+// CreatorRevoked reports whether p was created with a client token that has
+// since been revoked (or no longer exists). Items made by the operator are
+// never refused. ApproveProposal and the scheduler check it, so revoking a
+// token stops everything it proposed or scheduled, whichever way it was
+// revoked (token revoke, OAuth grant revocation), without a sweep.
+func (s *Store) CreatorRevoked(ctx context.Context, p *Proposal) (bool, error) {
+	if p == nil || p.CreatorTokenID == 0 {
+		return false, nil
+	}
+	var revoked bool
+	err := s.db.QueryRowContext(ctx, "SELECT revoked_at IS NOT NULL FROM api_tokens WHERE id = ?", p.CreatorTokenID).Scan(&revoked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check proposal creator: %w", err)
+	}
+	return revoked, nil
 }

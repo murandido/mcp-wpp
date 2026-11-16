@@ -239,7 +239,7 @@ func TestOperatorSchedule(t *testing.T) {
 	}
 	// Operator schedules need no approval, even when the default is confirm.
 	p, err := s.ScheduleMessage(ctx, visibleJID, "wake up", at)
-	if err != nil || p.Status != store.OutboxScheduled || !strings.Contains(p.Summary, "operator") || !strings.Contains(p.Summary, "Alice") {
+	if err != nil || p.Status != store.OutboxScheduled || p.CreatedBy != store.CreatorOperatorCLI || !strings.Contains(p.Summary, "Alice") {
 		t.Fatalf("operator schedule: %+v %v", p, err)
 	}
 	_ = st.SetChatSendPolicy(ctx, visibleJID, store.SendNone)

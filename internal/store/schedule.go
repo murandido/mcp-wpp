@@ -77,6 +77,23 @@ func migrateOutbox(db *sql.DB) error {
 	return tx.Commit()
 }
 
+// migrateOutboxCreator adds the creator columns to an outbox table made by an
+// older version. Existing rows keep NULL (an unknown creator).
+func migrateOutboxCreator(db *sql.DB) error {
+	for _, col := range []struct{ name, typ string }{{"created_by", "TEXT"}, {"created_by_token", "INTEGER"}} {
+		has, err := hasColumn(db, "outbox", col.name)
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := db.Exec("ALTER TABLE outbox ADD COLUMN " + col.name + " " + col.typ); err != nil {
+				return fmt.Errorf("add column outbox.%s: %w", col.name, err)
+			}
+		}
+	}
+	return nil
+}
+
 // CreateScheduledProposal records a scheduled message awaiting approval.
 // Approval (ClaimProposal) turns it into a scheduled item; until then it
 // expires at sendAt.
@@ -113,14 +130,15 @@ func (s *Store) insertScheduled(ctx context.Context, status, tool, argsJSON, sum
 	}
 	now = now.UTC()
 	sendAt = sendAt.UTC().Truncate(time.Second)
+	by, tokenID := creatorFrom(ctx)
 	res, err := s.db.ExecContext(ctx,
-		"INSERT INTO outbox (tool, args_json, summary, status, created_at, expires_at, send_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tool, argsJSON, summary, status, now, sendAt, sendAt)
+		"INSERT INTO outbox (tool, args_json, summary, status, created_at, expires_at, send_at, created_by, created_by_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		tool, argsJSON, summary, status, now, sendAt, sendAt, by, tokenID)
 	if err != nil {
 		return nil, fmt.Errorf("schedule message: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return &Proposal{ID: id, Tool: tool, ArgsJSON: argsJSON, Summary: summary, Status: status, CreatedAt: now, ExpiresAt: sendAt, SendAt: &sendAt}, nil
+	return withCreator(&Proposal{ID: id, Tool: tool, ArgsJSON: argsJSON, Summary: summary, Status: status, CreatedAt: now, ExpiresAt: sendAt, SendAt: &sendAt}, by, tokenID), nil
 }
 
 // MarkMissedScheduled marks scheduled items more than maxLate past their

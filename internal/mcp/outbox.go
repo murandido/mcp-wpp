@@ -153,8 +153,11 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 	if err := json.Unmarshal([]byte(p.ArgsJSON), &args); err != nil {
 		return finish(true, "corrupt proposal: "+err.Error())
 	}
-	// The chat may have been hidden, or its sends turned off, since the
-	// proposal was made.
+	// The token that proposed it may have been revoked, the chat hidden,
+	// or its sends turned off, since the proposal was made.
+	if reason := s.creatorBlocked(ctx, p); reason != "" {
+		return finish(true, reason)
+	}
 	if reason := s.writeBlocked(ctx, p.Tool, args); reason != "" {
 		return finish(true, reason)
 	}
@@ -184,6 +187,19 @@ func (s *Server) ApproveProposal(ctx context.Context, id int64) (store.Proposal,
 	}
 	text := strings.Join(texts, "\n")
 	return finish(res.IsError || reportsFailure(text), text)
+}
+
+// creatorBlocked refuses an item whose creating client token has been
+// revoked since. It returns the refusal text, or "" when it may proceed.
+func (s *Server) creatorBlocked(ctx context.Context, p *store.Proposal) string {
+	revoked, err := s.client.Store().CreatorRevoked(ctx, p)
+	if err != nil {
+		return "cannot check who proposed this: " + err.Error()
+	}
+	if revoked {
+		return fmt.Sprintf("refused: the API token that created this (%s) has been revoked; nothing was sent", p.CreatedBy)
+	}
+	return ""
 }
 
 // reportsFailure detects the `{"Success": false, ...}` results several send

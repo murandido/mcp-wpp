@@ -93,5 +93,8 @@ func applySendingSchema(db *sql.DB) error {
 	if _, err := db.Exec(outboxSchema); err != nil {
 		return fmt.Errorf("apply outbox schema: %w", err)
 	}
-	return migrateOutbox(db)
+	if err := migrateOutbox(db); err != nil {
+		return err
+	}
+	return migrateOutboxCreator(db)
 }

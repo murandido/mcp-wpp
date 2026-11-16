@@ -119,8 +119,8 @@ func (s *Server) ScheduleMessage(ctx context.Context, ref, message string, sendA
 	}
 	args := map[string]any{"recipient": jid, "message": message, "send_at": sendAt.Format(time.RFC3339)}
 	raw, _ := json.Marshal(args)
-	summary := s.summarise("schedule_message", args) + "\n  scheduled by: operator"
-	p, err := st.ScheduleMessage(ctx, "schedule_message", string(raw), summary, sendAt, s.clock())
+	summary := s.summarise("schedule_message", args)
+	p, err := st.ScheduleMessage(store.WithCreator(ctx, store.CreatorOperatorCLI), "schedule_message", string(raw), summary, sendAt, s.clock())
 	if err != nil {
 		return store.Proposal{}, err
 	}
@@ -213,6 +213,9 @@ func (s *Server) sendScheduled(ctx context.Context, p *store.Proposal) (failed b
 	var args map[string]any
 	if err := json.Unmarshal([]byte(p.ArgsJSON), &args); err != nil {
 		return true, "corrupt scheduled message: " + err.Error()
+	}
+	if reason := s.creatorBlocked(ctx, p); reason != "" {
+		return true, reason
 	}
 	if reason := s.writeBlocked(ctx, "schedule_message", args); reason != "" {
 		return true, reason
