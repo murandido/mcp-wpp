@@ -294,6 +294,9 @@ func ParsePublicURL(raw string) (string, error) {
 	if !strings.EqualFold(u.Scheme, "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return "", fmt.Errorf("public URL %q must be https://host[:port] without user info, query or fragment", raw)
 	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("public URL %q has no host", raw)
+	}
 	if u.Path != "" && u.Path != "/" {
 		return "", fmt.Errorf("public URL %q must not have a path: the MCP endpoint is always <public URL>/mcp", raw)
 	}
