@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
+
+	"github.com/murandido/mcp-wpp/internal/textfold"
 )
 
 // ErrNoSQLCipher means the binary was linked against plain SQLite, where
@@ -59,6 +61,13 @@ func (c connector) Connect(context.Context) (driver.Conn, error) {
 		return nil, err
 	}
 	sc := conn.(*sqlite3.SQLiteConn)
+	// Accent- and case-insensitive matching for the LIKE fallback of search
+	// (see internal/store). Pure, so SQLite may use it in indexes and
+	// constant-fold it.
+	if err := sc.RegisterFunc(textfold.SQLFunc, textfold.SQL, true); err != nil {
+		sc.Close()
+		return nil, err
+	}
 	if len(c.key) > 0 {
 		// Keep temporary tables and sort spills off disk.
 		if _, err := sc.Exec("PRAGMA temp_store = MEMORY", nil); err != nil {

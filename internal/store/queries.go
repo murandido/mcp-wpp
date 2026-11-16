@@ -66,8 +66,8 @@ func (s *Store) ListMessages(ctx context.Context, params ListMessagesParams) ([]
 			whereClauses = append(whereClauses, "messages.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
 			args = append(args, ftsMatchQuery(q))
 		} else {
-			whereClauses = append(whereClauses, "LOWER(messages.content) LIKE LOWER(?)")
-			args = append(args, "%"+q+"%")
+			whereClauses = append(whereClauses, foldMatch("messages.content"))
+			args = append(args, foldPattern(q))
 		}
 	}
 	if s.scoped {
@@ -147,11 +147,11 @@ func (s *Store) ListChats(ctx context.Context, query string, limit, page int, in
 	var args []any
 	b.WriteString(" WHERE 1=1")
 	if query != "" {
-		b.WriteString(" AND (LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?")
-		args = append(args, "%"+query+"%", "%"+query+"%")
+		b.WriteString(" AND (" + foldMatch("chats.name") + " OR chats.jid LIKE ?")
+		args = append(args, foldPattern(query), "%"+query+"%")
 		// 1:1 chats are often stored under the bare number; match the
 		// address book too.
-		if book := s.searchContactNames("%" + query + "%"); len(book) > 0 {
+		if book := s.searchContactNames(query); len(book) > 0 {
 			b.WriteString(" OR chats.jid IN (" + strings.TrimSuffix(strings.Repeat("?,", len(book)), ",") + ")")
 			for jid := range book {
 				args = append(args, jid)
@@ -220,11 +220,11 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT jid, name
 		FROM chats
-		WHERE (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
+		WHERE (`+foldMatch("name")+` OR LOWER(jid) LIKE LOWER(?))
 		  AND jid NOT LIKE '%@g.us'
 		  AND jid NOT LIKE '%@lid'`+s.scopeClause("jid")+`
 		ORDER BY name, jid
-		LIMIT 50`, pattern, pattern)
+		LIMIT 50`, foldPattern(query), pattern)
 	if err != nil {
 		return nil, fmt.Errorf("search contacts: %w", err)
 	}
@@ -249,7 +249,7 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 
 	// Merge in address-book matches (issue #21: saved names live in
 	// whatsmeow_contacts, not chats).
-	names := s.searchContactNames(pattern)
+	names := s.searchContactNames(query)
 	seen := make(map[string]bool, len(result))
 	for i, c := range result {
 		seen[c.JID] = true

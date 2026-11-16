@@ -189,7 +189,7 @@ func runServe(storeDir string, redactor *security.Redactor, args []string) int {
 	defer st.Close()
 
 	if !st.FTSEnabled() {
-		fmt.Fprintln(os.Stderr, "warn: this SQLCipher build lacks FTS5; message search falls back to accent-sensitive substring matching (the Docker image has FTS5)")
+		fmt.Fprintln(os.Stderr, "warn: this SQLCipher build lacks FTS5; message search falls back to slower substring matching (still case- and accent-insensitive; the Docker image has FTS5)")
 	}
 	limits := ratelimit.DefaultConfig()
 	limits.MaxSendsPerHour = maxPerHour

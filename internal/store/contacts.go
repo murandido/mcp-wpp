@@ -29,22 +29,23 @@ func (s *Store) ContactName(jid string) string {
 	return ""
 }
 
-// searchContactNames returns address-book contacts whose name or JID matches
-// the LIKE pattern, as a jid -> display-name map. Empty when the whatsmeow
-// store is unavailable.
-func (s *Store) searchContactNames(pattern string) map[string]string {
+// searchContactNames returns address-book contacts whose name contains query
+// (case- and accent-insensitive) or whose JID contains it, as a jid ->
+// display-name map. Empty when the whatsmeow store is unavailable.
+func (s *Store) searchContactNames(query string) map[string]string {
 	out := map[string]string{}
 	if s.whatsmeowDB == nil {
 		return out
 	}
+	name := foldPattern(query)
 	rows, err := s.whatsmeowDB.Query(`
 		SELECT their_jid, `+contactNameExpr+` AS name
 		FROM whatsmeow_contacts
 		WHERE (their_jid LIKE '%@s.whatsapp.net' OR their_jid LIKE '%@lid')
-		  AND (LOWER(full_name) LIKE LOWER(?) OR LOWER(push_name) LIKE LOWER(?)
-		    OR LOWER(first_name) LIKE LOWER(?) OR LOWER(business_name) LIKE LOWER(?)
+		  AND (`+foldMatch("full_name")+` OR `+foldMatch("push_name")+`
+		    OR `+foldMatch("first_name")+` OR `+foldMatch("business_name")+`
 		    OR their_jid LIKE ?)
-		LIMIT 50`, pattern, pattern, pattern, pattern, pattern)
+		LIMIT 50`, name, name, name, name, "%"+query+"%")
 	if err != nil {
 		return out
 	}

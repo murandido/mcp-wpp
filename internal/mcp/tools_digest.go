@@ -33,7 +33,7 @@ func (s *Server) registerDigestTool() {
 		mcp.WithNumber("max_per_chat", mcp.Description("most recent messages to show per group (default 10, max 50)")),
 		mcp.WithBoolean("only_unread", mcp.Description("only incoming messages newer than what you last read in each chat (read state comes from your own devices' read receipts and mark_read; a chat never read counts as unread)")),
 		mcp.WithBoolean("mentions_only", mcp.Description("only messages that @-mention you")),
-		mcp.WithArray("keywords", mcp.Items(map[string]any{"type": "string"}), mcp.Description("only messages containing any of these words (case-insensitive; accent-insensitive prefix match when the full-text index is available)")),
+		mcp.WithArray("keywords", mcp.Items(map[string]any{"type": "string"}), mcp.Description("only messages containing any of these words (case- and accent-insensitive; prefix match when the full-text index is available, substring match otherwise)")),
 		mcp.WithString("group_by", mcp.Enum(store.DigestByChat, store.DigestBySender), mcp.Description("`chat` (default) or `sender`")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
