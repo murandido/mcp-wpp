@@ -45,6 +45,10 @@ services:
       # WPP_MCP_WRITE: "1"          # allow sends (each one still waits for your approval)
       # WPP_MCP_RETAIN_DAYS: "90"   # delete cached messages older than 90 days
       # WPP_MCP_PAIR_PHONE: "+5511999999999"  # print a pairing code on first start
+      # OAuth for remote connectors such as claude.ai, behind an HTTPS proxy that
+      # forwards /mcp, /.well-known/oauth-* and /oauth/* (README: Connect with OAuth):
+      # WPP_MCP_OAUTH: "1"
+      # WPP_MCP_PUBLIC_URL: https://wpp.example.com
       # Local transcription (needs the transcribe profile and WPP_MCP_WRITE):
       # WPP_MCP_TRANSCRIBE_URL: http://speaches:8000
       # WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP: "1"
