@@ -89,6 +89,10 @@ type Config struct {
 	// MCPRate limits each client token to this many /mcp requests per
 	// minute (burst of half that). The operator is exempt. 0 disables it.
 	MCPRate int
+	// Refused, when set, is told about every 401, 403 and 429 response,
+	// with the status code (one of RefusalCodes) and the route class (one
+	// of RouteClasses).
+	Refused func(code int, route string)
 }
 
 // OAuthProvider is the OAuth authorization server. *oauth.Server
@@ -225,7 +229,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	fails := newAuthFailures(s.cfg.AuthFailLimit, s.cfg.AuthFailWindow, s.cfg.AuthCooldown)
 	inner := securityHeaders(mcpRateLimit(auditAdmin(mux, s.cfg.Audit), newIdentityLimiter(s.cfg.MCPRate)))
-	rootHandler := hostGuard(authGuard(inner, s.cfg.AuthToken, ui, verifier, s.cfg.OAuth, fails), s.cfg.AllowedHosts)
+	rootHandler := observeRefusals(hostGuard(authGuard(inner, s.cfg.AuthToken, ui, verifier, s.cfg.OAuth, fails), s.cfg.AllowedHosts), s.cfg.Refused)
 
 	ln, err := listen(s.cfg.Addr)
 	if err != nil {

@@ -397,6 +397,8 @@ docker compose up -d
 | `wpp_mcp_messages_received_total`, `wpp_mcp_messages_sent_total` | Live messages in and out since start |
 | `wpp_mcp_seconds_since_last_message_received` | Present once a message has arrived since start |
 | `wpp_mcp_tool_calls_total{tool,outcome}` | MCP tool executions, `ok` or `error` (calls refused by the access policy or held as proposals are not executions) |
+| `wpp_mcp_tool_calls_denied_total{tool}` | Tool calls and media resource reads (`tool="resource:whatsapp://media/"`) refused by a token's scope or chat set, the access policy or a `none` send policy, counted even with `-audit-days 0` |
+| `wpp_mcp_http_refusals_total{code,route}` | Refused HTTP requests: `code` is `401` (authentication), `403` (Host/Origin guard, CSRF) or `429` (rate limits); `route` is `mcp`, `admin`, `oauth`, `ui_login`, `probe`, `page` or `other` |
 | `wpp_mcp_outbox_pending`, `wpp_mcp_access_requests_pending` | Waiting for your decision |
 | `wpp_mcp_chats_cached`, `wpp_mcp_chats_visible` | Chats in the cache, and those the access policy shows |
 | `wpp_mcp_alerts_total{event,result}` | Session alert deliveries (with `-alert-url`) |
