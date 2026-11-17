@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/murandido/mcp-wpp/internal/doctext"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,6 +88,8 @@ type Client struct {
 	transcribeMu  sync.Mutex
 	// ocr runs local Tesseract OCR on images (see ocr.go); nil is disabled.
 	ocr *ocr.Engine
+	// docs extracts document text for chat notes (pdftotext, plain text).
+	docs *doctext.Engine
 	// isConnected and waSend are wa's IsConnected and SendMessage, used by
 	// SendReply, SendReaction, polls and contact cards (waSend through the
 	// rate-limited sendMessage); tests replace them.
@@ -222,6 +225,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		status:           ConnectionStatus{State: "disconnected", Since: time.Now().UTC()},
 		transcribeCfg:    transcribe.ConfigFromEnv(),
 		ocr:              cfg.OCR,
+		docs:             doctext.New(),
 	}
 	c.bindWA(wa)
 	return c, nil

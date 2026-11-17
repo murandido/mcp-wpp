@@ -30,3 +30,25 @@ func TestImageTexts_RoundTrip(t *testing.T) {
 		t.Fatalf("chats not independent: %+v", g)
 	}
 }
+
+func TestDocumentTexts_RoundTrip(t *testing.T) {
+	s := openTestStore(t)
+	if _, err := s.db.Exec(documentTextsSchema); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if got, err := s.GetDocumentText(ctx, "m1", "c1"); err != nil || got != nil {
+		t.Fatalf("missing: %+v %v", got, err)
+	}
+	if err := s.PutDocumentText(ctx, DocumentText{MessageID: "m1", ChatJID: "c1", Text: "Contrato", Kind: "pdf", Truncated: true}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetDocumentText(ctx, "m1", "c1")
+	if err != nil || got == nil || got.Text != "Contrato" || got.Kind != "pdf" || !got.Truncated || got.CreatedAt.IsZero() {
+		t.Fatalf("got %+v %v", got, err)
+	}
+	_ = s.PutDocumentText(ctx, DocumentText{MessageID: "m1", ChatJID: "c1", Text: "novo", Kind: "text"})
+	if g, _ := s.GetDocumentText(ctx, "m1", "c1"); g.Text != "novo" || g.Truncated || g.Kind != "text" {
+		t.Fatalf("not replaced: %+v", g)
+	}
+}
