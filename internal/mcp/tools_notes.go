@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/murandido/mcp-wpp/internal/client"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
 
@@ -31,6 +33,8 @@ type getChatNotesArgs struct {
 	ChatJID    string `json:"chat_jid"`
 	IncludeNew *bool  `json:"include_new"`
 	MaxNew     int    `json:"max_new"`
+	// IncludeMedia defaults to true.
+	IncludeMedia *bool `json:"include_media"`
 }
 
 type updateChatNotesArgs struct {
@@ -42,10 +46,11 @@ type updateChatNotesArgs struct {
 
 func (s *Server) registerNotesTools() {
 	get := mcp.NewTool("get_chat_notes",
-		mcp.WithDescription(offlineSafePrefix+"Read a chat's living notes (a summary kept by you across conversations) together with the cached messages that arrived after the notes were last updated, including cached audio transcripts and image text. Read-only; no side effects. Use it before answering about a chat, then merge the new messages and save with update_chat_notes so the notes improve every time. Returns a text block: the notes with their version, the new messages, and how to update."),
+		mcp.WithDescription("Read a chat's living notes (a summary kept by you across conversations) together with the cached messages that arrived after the notes were last updated, with what this machine can learn from their media: voice notes transcribed by a local service, images and stickers attached for you to look at (plus their text with -ocr), and the text of PDFs and text documents. Read-only for the WhatsApp account: it may download media into the encrypted cache and run local transcription, but nothing leaves this machine except this result (include_media=false keeps it to the cache). Use it before answering about a chat, then merge everything, describing what the images show, and save with update_chat_notes so the notes improve every time. Returns the notes with their version, the new messages with their media, and how to update; images follow the text."),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description(jidDesc)),
 		mcp.WithBoolean("include_new", mcp.DefaultBool(true), mcp.Description("include the messages after the notes' watermark (default true); without notes yet, the most recent messages")),
 		mcp.WithNumber("max_new", mcp.DefaultNumber(100), mcp.Description(fmt.Sprintf("max new messages to return, oldest first (default 100, capped at %d); the result says when more remain", notesMaxNew))),
+		mcp.WithBoolean("include_media", mcp.DefaultBool(true), mcp.Description("process media (default true): transcribe voice notes locally, attach images and stickers, read documents; a page stops before media that exceeds this call's budget, so the next call continues from there")),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithIdempotentHintAnnotation(true),
@@ -62,6 +67,7 @@ func (s *Server) registerNotesTools() {
 			return notesError(err), nil
 		}
 		var b strings.Builder
+		var images []mcp.Content
 		b.WriteString(untrustedPreamble)
 		writeNotesHeader(&b, n)
 		if a.IncludeNew == nil || *a.IncludeNew {
@@ -76,13 +82,25 @@ func (s *Server) registerNotesTools() {
 			if err != nil {
 				return notesError(err), nil
 			}
+			var media map[string]client.NoteMedia
+			if (a.IncludeMedia == nil || *a.IncludeMedia) && s.client != nil {
+				media = s.client.EnrichNotesMedia(ctx, msgs, client.DefaultNotesMediaLimits)
+				// End the page before the first media item over this call's
+				// budget, so the watermark never skips it.
+				for i, m := range msgs {
+					if media[m.ID].Pending {
+						msgs, more = msgs[:i], true
+						break
+					}
+				}
+			}
 			if n.Version == 0 {
 				fmt.Fprintf(&b, "\nMost recent messages (%d", len(msgs))
 			} else {
 				fmt.Fprintf(&b, "\nNew messages since the notes (%d", len(msgs))
 			}
 			if more {
-				b.WriteString(", more remain: save, then call get_chat_notes again")
+				b.WriteString(", more remain: save with covered_until_message_id set to the newest message shown, then call get_chat_notes again")
 			}
 			b.WriteString("):\n")
 			if len(msgs) == 0 {
@@ -90,7 +108,23 @@ func (s *Server) registerNotesTools() {
 			}
 			for _, m := range msgs {
 				b.WriteString(st.FormatMessage(ctx, m, false))
-				writeCachedMediaText(ctx, &b, st, m)
+				nm, ok := media[m.ID]
+				if !ok {
+					writeCachedMediaText(ctx, &b, st, m)
+					continue
+				}
+				if nm.Text != "" {
+					fmt.Fprintf(&b, "    [%s] %s\n", nm.Label, indentContinuation(nm.Text))
+				}
+				if nm.Image != nil {
+					images = append(images,
+						mcp.NewTextContent(fmt.Sprintf("Image %d: %s from message %s (%s)", len(images)/2+1, m.MediaType, m.ID, m.Timestamp.UTC().Format(time.RFC3339))),
+						mcp.NewImageContent(base64.StdEncoding.EncodeToString(nm.Image), "image/jpeg"))
+					fmt.Fprintf(&b, "    [%s attached below as image %d]\n", m.MediaType, len(images)/2)
+				}
+				if nm.Note != "" {
+					fmt.Fprintf(&b, "    [%s]\n", nm.Note)
+				}
 			}
 			if len(msgs) > 0 {
 				fmt.Fprintf(&b, "Newest message shown: %s\n", msgs[len(msgs)-1].ID)
@@ -99,7 +133,9 @@ func (s *Server) registerNotesTools() {
 		b.WriteString("\n")
 		b.WriteString(notesGuidance)
 		b.WriteString("\n")
-		return mcp.NewToolResultText(b.String()), nil
+		res := mcp.NewToolResultText(b.String())
+		res.Content = append(res.Content, images...)
+		return res, nil
 	}))
 
 	update := mcp.NewTool("update_chat_notes",
@@ -165,7 +201,15 @@ func writeCachedMediaText(ctx context.Context, b *strings.Builder, st *store.Sto
 			b.WriteString(indentContinuation(t.Text))
 			b.WriteString("\n")
 		}
-	case "image", "document", "sticker":
+	case "document":
+		if dt, err := st.GetDocumentText(ctx, m.ID, m.ChatJID); err == nil && dt != nil && dt.Text != "" {
+			b.WriteString("    [document text] ")
+			b.WriteString(indentContinuation(dt.Text))
+			b.WriteString("\n")
+			return
+		}
+		fallthrough
+	case "image", "sticker":
 		if it, err := st.GetImageText(ctx, m.ID, m.ChatJID); err == nil && it != nil && it.Text != "" {
 			b.WriteString("    [text in image] ")
 			b.WriteString(indentContinuation(it.Text))

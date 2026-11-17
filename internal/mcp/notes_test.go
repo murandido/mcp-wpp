@@ -131,3 +131,39 @@ func TestNotes_GetChatExcerpt(t *testing.T) {
 		t.Fatalf("get_chat: %s", res.Text)
 	}
 }
+
+// Media in the notes: cached transcripts and document text come with their
+// label, audio without a local service says so, and include_media=false
+// reads only what is cached.
+func TestNotes_MediaLabels(t *testing.T) {
+	s, st := tokenServer(t, Options{})
+	bg := context.Background()
+	at := time.Now().UTC().Add(time.Minute)
+	for i, m := range []store.Message{
+		{ID: "voice-ok", MediaType: "audio"},
+		{ID: "voice-new", MediaType: "audio"},
+		{ID: "doc-1", MediaType: "document", Filename: "c.pdf"},
+	} {
+		m.ChatJID, m.Sender, m.Timestamp = visibleJID, visibleJID, at.Add(time.Duration(i)*time.Second)
+		if err := st.StoreMessage(bg, m, nil, nil, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.PutTranscript(bg, store.Transcript{MessageID: "voice-ok", ChatJID: visibleJID, Text: "chego às 5"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutDocumentText(bg, store.DocumentText{MessageID: "doc-1", ChatJID: visibleJID, Text: "Contrato assinado", Kind: "pdf"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := tokenCtx([]string{auth.ScopeRead}, nil)
+	res := callToolAs(t, s, ctx, "get_chat_notes", map[string]any{"chat_jid": visibleJID})
+	for _, want := range []string{"    [transcript] chego às 5", "    [document text] Contrato assinado", "no local transcription service"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("missing %q in:\n%s", want, res.Text)
+		}
+	}
+	res = callToolAs(t, s, ctx, "get_chat_notes", map[string]any{"chat_jid": visibleJID, "include_media": false})
+	if !strings.Contains(res.Text, "[transcript] chego às 5") || strings.Contains(res.Text, "no local transcription") {
+		t.Fatalf("cache-only read:\n%s", res.Text)
+	}
+}
