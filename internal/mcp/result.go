@@ -89,7 +89,7 @@ func readInlineMedia(path, mediaType string, read func(string) ([]byte, error)) 
 	mimeType := sniffResourceMIME(data, mediaType)
 	encoded := base64.StdEncoding.EncodeToString(data)
 	switch mediaType {
-	case "image":
+	case "image", "sticker":
 		return mcp.NewImageContent(encoded, mimeType), true
 	case "audio":
 		return mcp.NewAudioContent(encoded, mimeType), true

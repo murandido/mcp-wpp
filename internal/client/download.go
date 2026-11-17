@@ -161,7 +161,8 @@ func (c *Client) download(ctx context.Context, messageID, chatJID, outputPath st
 
 	var waMediaType whatsmeow.MediaType
 	switch mediaType {
-	case "image":
+	case "image", "sticker":
+		// Stickers are encrypted with the image media keys.
 		waMediaType = whatsmeow.MediaImage
 	case "video":
 		waMediaType = whatsmeow.MediaVideo

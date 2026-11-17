@@ -1,6 +1,7 @@
 package client
 
 import (
+	"strings"
 	"testing"
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -214,5 +215,37 @@ func TestExtractDirectPathFromURL(t *testing.T) {
 				t.Fatalf("extractDirectPathFromURL(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestExtract_StickerIsStoredAsMedia(t *testing.T) {
+	msg := &waProto.Message{StickerMessage: &waProto.StickerMessage{
+		URL: proto.String("https://mmg.whatsapp.net/s"), DirectPath: proto.String("/s"),
+		MediaKey: []byte{1}, FileSHA256: []byte{0xab}, FileEncSHA256: []byte{2}, FileLength: proto.Uint64(42),
+	}}
+	mt, name, url, dp, key, sha, enc, n := extractMediaInfo(msg)
+	if mt != "sticker" || name != "sticker_ab.webp" || url == "" || dp != "/s" || len(key) == 0 || len(sha) == 0 || len(enc) == 0 || n != 42 {
+		t.Fatalf("sticker: %q %q %q %q %d", mt, name, url, dp, n)
+	}
+	if got := extractTextContent(msg); got != "" {
+		t.Fatalf("sticker content: %q", got)
+	}
+}
+
+func TestExtract_Location(t *testing.T) {
+	msg := &waProto.Message{LocationMessage: &waProto.LocationMessage{
+		DegreesLatitude: proto.Float64(-16.6869), DegreesLongitude: proto.Float64(-49.2648),
+		Name: proto.String("Café\nCentral"), Address: proto.String(strings.Repeat("Rua ", 50)),
+	}}
+	got := extractTextContent(msg)
+	if !strings.HasPrefix(got, "[Location] Café Central, Rua") || !strings.HasSuffix(got, "(-16.68690, -49.26480)") || strings.Contains(got, "\n") || len([]rune(got)) > 300 {
+		t.Fatalf("location: %q", got)
+	}
+	live := &waProto.Message{LiveLocationMessage: &waProto.LiveLocationMessage{DegreesLatitude: proto.Float64(1), DegreesLongitude: proto.Float64(2), Caption: proto.String("a caminho")}}
+	if got := extractTextContent(live); got != "[Live location] a caminho (1.00000, 2.00000)" {
+		t.Fatalf("live: %q", got)
+	}
+	if got := extractTextContent(&waProto.Message{LocationMessage: &waProto.LocationMessage{DegreesLatitude: proto.Float64(1), DegreesLongitude: proto.Float64(2)}}); got != "[Location] (1.00000, 2.00000)" {
+		t.Fatalf("bare location: %q", got)
 	}
 }

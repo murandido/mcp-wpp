@@ -634,7 +634,45 @@ func extractTextContent(msg *waProto.Message) string {
 	if doc := msg.GetDocumentMessage(); doc != nil {
 		return doc.GetCaption()
 	}
+	if loc := locationText(msg); loc != "" {
+		return loc
+	}
 	return contactCardText(msg)
+}
+
+// locationText renders a shared or live location. The name, address and
+// caption come from the sender: they are collapsed to one line and bounded.
+func locationText(msg *waProto.Message) string {
+	if loc := msg.GetLocationMessage(); loc != nil {
+		parts := []string{}
+		for _, s := range []string{loc.GetName(), loc.GetAddress()} {
+			if s = oneLine(s, 120); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		label := strings.Join(parts, ", ")
+		if label != "" {
+			label += " "
+		}
+		return fmt.Sprintf("[Location] %s(%.5f, %.5f)", label, loc.GetDegreesLatitude(), loc.GetDegreesLongitude())
+	}
+	if live := msg.GetLiveLocationMessage(); live != nil {
+		caption := oneLine(live.GetCaption(), 120)
+		if caption != "" {
+			caption += " "
+		}
+		return fmt.Sprintf("[Live location] %s(%.5f, %.5f)", caption, live.GetDegreesLatitude(), live.GetDegreesLongitude())
+	}
+	return ""
+}
+
+// oneLine collapses whitespace and bounds s to n runes.
+func oneLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > n {
+		s = string(r[:n]) + "…"
+	}
+	return s
 }
 
 // extractMediaInfo pulls out the storable media fields from a Message.
@@ -660,6 +698,11 @@ func extractMediaInfo(msg *waProto.Message) (mediaType, filename, url, directPat
 		return "audio", generatedMediaFilename("audio", aud.GetFileSHA256(), ".ogg"),
 			aud.GetURL(), aud.GetDirectPath(),
 			aud.GetMediaKey(), aud.GetFileSHA256(), aud.GetFileEncSHA256(), aud.GetFileLength()
+	}
+	if st := msg.GetStickerMessage(); st != nil {
+		return "sticker", generatedMediaFilename("sticker", st.GetFileSHA256(), ".webp"),
+			st.GetURL(), st.GetDirectPath(),
+			st.GetMediaKey(), st.GetFileSHA256(), st.GetFileEncSHA256(), st.GetFileLength()
 	}
 	if doc := msg.GetDocumentMessage(); doc != nil {
 		fname := security.SafeFilename(doc.GetFileName())
