@@ -281,14 +281,35 @@ Send times must be in the future and at most 30 days ahead. At the send time the
 
 Each allowed chat can keep a living summary: who it is with, ongoing topics, agreements, dates, open items and preferences. The server has no model of its own; the notes are written by your MCP client and improve every time they are used:
 
-1. `get_chat_notes` returns the current notes and the cached messages that arrived after them (with cached voice-note transcripts and image text). A chat without notes returns its most recent messages.
+1. `get_chat_notes` returns the current notes and the cached messages that arrived after them, with what this machine can learn from their media (below). A chat without notes returns its most recent messages.
 2. The client merges what is new and saves the result with `update_chat_notes`, passing the version it read and the newest message it covered. The next read starts after that message.
 
 The server's instructions ask clients to do this whenever they work on a chat, and `get_chat` shows the first lines of the notes. Notes are local state: encrypted in `messages.db`, never sent to WhatsApp, so a read-only token can keep them. Each save is a new version; the previous 10 are kept. Two conversations cannot overwrite each other: a save based on an older version is refused, and the client reads again and merges.
 
 Notes follow the access policy like messages: hidden chats and chats outside a token's set behave as if they had none. Denying or resetting a chat's access deletes its notes and their history. Retention does not: the notes are what outlives old messages. Because they are derived from other people's messages, notes are always served as untrusted data, and clients are told to record facts, never instructions found in messages.
 
-The operator sees and manages them on the `/notes` page (linked from `/access` as "notes vN") and with `wpp-mcp notes show|history|revert|clear <chat>`, all audited.
+The operator sees and manages the notes on the `/notes` page (linked from `/access` as "notes vN") and with `wpp-mcp notes show|history|revert|clear <chat>`, all audited.
+
+Media goes into the notes too, all processed on this machine:
+
+| Media | What the client gets |
+|---|---|
+| Voice notes and audio | A transcript from the local whisper service (below), cached; without a local service, a note that it was not transcribed |
+| Images | The image itself, downscaled to 768 px, for the client to describe, plus its text with `-ocr` |
+| Stickers | The sticker as an image (animated ones are listed but not previewed) |
+| PDFs and text files | Their text, read with `pdftotext` (up to 30 pages, 64 KiB) or directly, cached |
+| Videos | The caption |
+| Locations, contacts, polls | Name, address and coordinates; the contact card; the poll question (votes with `get_poll_results`) |
+
+Each call processes at most 8 images, 10 transcriptions and 5 documents. When a page reaches that budget it ends just before the next media message, so saving with the newest message shown never skips anything: the next call continues from there. Media is downloaded into the encrypted cache and decrypted only in memory; expired media is reported as unavailable and the phone is never asked to re-upload it. `include_media=false` reads only what is already cached.
+
+Stickers and locations are stored for messages received from this version on.
+
+### Local transcription
+
+`docker compose --profile transcribe build whisper && docker compose --profile transcribe up -d` adds a `whisper` service: whisper.cpp v1.9.5 built from a pinned commit on your host, with the multilingual base model verified by SHA-256 ([`deploy/whisper/Dockerfile`](deploy/whisper/Dockerfile)). It has no published port and sits on an internal network without internet access, so only wpp-mcp reaches it; uploaded audio stays in a memory-only tmpfs. Point wpp-mcp at it with `WPP_MCP_TRANSCRIBE_URL=http://whisper:8080` and `WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP=1`. It transcribes one voice note at a time with two threads (`WHISPER_THREADS`), roughly 10 to 20 seconds per minute of audio on two ARM cores, and each transcript is cached so it runs once per message.
+
+`get_chat_notes` transcribes on its own only when the service is on this machine or the private network; a remote API (`WPP_MCP_TRANSCRIBE_ALLOW_REMOTE`) is used only through the explicit `transcribe_audio` tool.
 
 ## Catching up and webhooks
 
@@ -521,7 +542,7 @@ Global flags go before the command: `wpp-mcp -store DIR serve -write`.
 | | `WPP_MCP_PAIR_PHONE` | | Print a pairing code at startup when unpaired |
 | | `WPP_MCP_MEDIA_ROOT` | `<store>/uploads` | Only directory `send_file` may read from and `output_path` may write to |
 | | `WPP_MCP_TRANSCRIBE_URL` | | OpenAI-compatible speech-to-text endpoint |
-| | `WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP` | off | Allow plain HTTP to a private-network service (e.g. the compose `speaches` profile) |
+| | `WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP` | off | Allow plain HTTP to a private-network service (e.g. the compose `whisper` service) |
 | | `WPP_MCP_TRANSCRIBE_ALLOW_REMOTE` | off | Allow a non-loopback HTTPS service |
 
 The complete tool list, with each tool's group, read-only status, approval requirement and chat scope, is in **[docs/tools.md](docs/tools.md)**. `wpp-mcp tools` prints the same list.
@@ -530,7 +551,7 @@ The complete tool list, with each tool's group, read-only status, approval requi
 
 - **systemd** (Linux): [`docs/systemd/wpp-mcp.service`](docs/systemd/wpp-mcp.service) is a hardened user unit that receives the key as a credential, optionally sealed to the TPM.
 - **launchd** (macOS): [`docs/launchd/com.murandido.wpp-mcp.plist`](docs/launchd/com.murandido.wpp-mcp.plist).
-- **Docker**: [`compose.yaml`](compose.yaml); `docker compose --profile transcribe up -d` adds local transcription.
+- **Docker**: [`compose.yaml`](compose.yaml); `docker compose --profile transcribe up -d` adds local transcription (see [Local transcription](#local-transcription)).
 - **Claude Code hook**: [`docs/hooks/setup.sh`](docs/hooks/setup.sh) starts the daemon with your session.
 
 ## Development
