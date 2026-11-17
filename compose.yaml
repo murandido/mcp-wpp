@@ -49,20 +49,40 @@ services:
       # forwards /mcp, /.well-known/oauth-* and /oauth/* (README: Connect with OAuth):
       # WPP_MCP_OAUTH: "1"
       # WPP_MCP_PUBLIC_URL: https://wpp.example.com
-      # Local transcription (needs the transcribe profile and WPP_MCP_WRITE):
-      # WPP_MCP_TRANSCRIBE_URL: http://speaches:8000
+      # Local transcription with the whisper service below (profile transcribe):
+      # voice notes are transcribed on this host for chat notes and
+      # transcribe_audio, and never leave it.
+      # WPP_MCP_TRANSCRIBE_URL: http://whisper:8080
       # WPP_MCP_TRANSCRIBE_ALLOW_PRIVATE_HTTP: "1"
-      # WPP_MCP_TRANSCRIBE_MODEL: Systran/faster-whisper-small
+    networks: [default, stt]
 
-  # Optional local speech-to-text: `docker compose --profile transcribe up -d`.
-  # Voice notes never leave your machine. Pin the image tag you trust.
-  speaches:
+  # Optional local speech-to-text: whisper.cpp built from a pinned commit with
+  # a SHA-256-verified model (deploy/whisper/Dockerfile). Build it on this
+  # host, then start it:
+  #   docker compose --profile transcribe build whisper
+  #   docker compose --profile transcribe up -d
+  # It sits on an internal network with no internet access and no published
+  # port; only wpp-mcp reaches it. Uploaded audio is held in tmpfs (memory).
+  whisper:
     profiles: [transcribe]
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    build: ./deploy/whisper
+    image: wpp-mcp-whisper:local
     restart: unless-stopped
-    # Not published on the host: only wpp-mcp reaches it on the compose network.
-    # Models download on first use; mount a volume to keep them (see the
-    # speaches documentation for the cache path).
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    networks: [stt]
+    # Threads used per transcription (one at a time); 2 suits a small VPS.
+    command: ["--threads", "${WHISPER_THREADS:-2}"]
+    mem_limit: 1g
+
+networks:
+  # Internal: no route to the internet, only between wpp-mcp and whisper.
+  stt:
+    internal: true
 
 secrets:
   wpp_mcp_key:

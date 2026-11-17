@@ -18,12 +18,13 @@ FROM build AS test
 ARG DEBIAN_FRONTEND=noninteractive
 # The OCR tests run the real tesseract here.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-por \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-por poppler-utils \
     && rm -rf /var/lib/apt/lists/*
-# The image ships Debian's SQLCipher, which has FTS5, and Tesseract: require
-# both here.
+# The image ships Debian's SQLCipher, which has FTS5, Tesseract and
+# pdftotext: require them here.
 ENV WPP_MCP_REQUIRE_FTS5=1 \
-    WPP_MCP_REQUIRE_TESSERACT=1
+    WPP_MCP_REQUIRE_TESSERACT=1 \
+    WPP_MCP_REQUIRE_PDFTOTEXT=1
 RUN make vet fmt test smoke e2e
 
 # ---- runtime ---------------------------------------------------------------
@@ -32,12 +33,13 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # ffmpeg is only needed by send_audio_message for non-Opus input; build with
 # --build-arg WITH_FFMPEG=1 to include it. Tesseract (Portuguese and English)
-# serves extract_image_text when the daemon runs with -ocr.
+# serves extract_image_text when the daemon runs with -ocr; pdftotext
+# (poppler-utils) reads PDF documents for chat notes.
 ARG WITH_FFMPEG=0
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends ca-certificates libsqlcipher1 \
-       tesseract-ocr tesseract-ocr-eng tesseract-ocr-por \
+       tesseract-ocr tesseract-ocr-eng tesseract-ocr-por poppler-utils \
     && if [ "$WITH_FFMPEG" = "1" ]; then apt-get install -y --no-install-recommends ffmpeg; fi \
     && rm -rf /var/lib/apt/lists/*
 
