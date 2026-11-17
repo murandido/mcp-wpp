@@ -152,7 +152,7 @@ func OpenWithKeys(dir string, keys *crypto.Keys) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply labels schema: %w", err)
 	}
-	if _, err := db.Exec(transcriptsSchema + imageTextsSchema); err != nil {
+	if _, err := db.Exec(transcriptsSchema + imageTextsSchema + documentTextsSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply transcripts and image text schema: %w", err)
 	}

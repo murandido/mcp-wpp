@@ -46,6 +46,7 @@ func (s *Store) PurgeBefore(ctx context.Context, cutoff time.Time) ([]PurgedMess
 	for _, q := range []string{
 		"DELETE FROM transcripts WHERE (message_id, chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
 		"DELETE FROM image_texts WHERE (message_id, chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
+		"DELETE FROM document_texts WHERE (message_id, chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
 		"DELETE FROM poll_votes WHERE (poll_message_id, poll_chat_jid) IN (SELECT id, chat_jid FROM messages WHERE timestamp < ?)",
 		"DELETE FROM messages WHERE timestamp < ?",
 	} {
