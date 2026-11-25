@@ -16,14 +16,20 @@ func windowServer(t *testing.T, confirm bool) (*Server, *store.Store, *fakeClock
 	t.Helper()
 	s, st, clk := scheduleServer(t, confirm)
 	s.loc = time.UTC
-	clk.set(time.Date(2026, 11, 16, 23, 0, 0, 0, time.UTC))
+	clk.set(windowDay.Add(23 * time.Hour))
 	if err := st.SetChatSendWindow(context.Background(), visibleJID, "08:00-22:00"); err != nil {
 		t.Fatal(err)
 	}
 	return s, st, clk
 }
 
-var nextOpening = time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC)
+// windowDay is tomorrow in UTC, not a fixed date: the store expires proposals
+// against the real clock, so a fake clock stuck in the past made a deferred
+// proposal expire before it could be approved once that date was a week old.
+var (
+	windowDay   = time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
+	nextOpening = windowDay.Add(32 * time.Hour)
+)
 
 type deferredResult struct {
 	ProposalID  int64     `json:"proposal_id"`
@@ -77,7 +83,7 @@ func TestSendWindow_DeferralFollowsPolicy(t *testing.T) {
 
 	// Inside the window nothing is deferred.
 	_ = st.SetChatSendPolicy(ctx, visibleJID, store.SendDirect)
-	clk.set(time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC))
+	clk.set(windowDay.Add(12 * time.Hour))
 	if res := callToolDirect(t, s, "send_message", send); strings.Contains(res.Text, "deferred") || !strings.Contains(res.Text, "Not connected") {
 		t.Fatalf("inside the window: %+v", res)
 	}
@@ -121,8 +127,8 @@ func TestSendWindow_SchedulerRechecksAndOperatorIgnores(t *testing.T) {
 	ctx := context.Background()
 	s, st, clk := scheduleServer(t, false)
 	s.loc = time.UTC
-	clk.set(time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC))
-	at := time.Date(2026, 11, 16, 23, 0, 0, 0, time.UTC)
+	clk.set(windowDay.Add(12 * time.Hour))
+	at := windowDay.Add(23 * time.Hour)
 	byAI := scheduledID(t, scheduleCall(t, s, visibleJID, at))
 	byOperator, err := s.ScheduleMessage(ctx, visibleJID, "operator's own", at)
 	if err != nil {
