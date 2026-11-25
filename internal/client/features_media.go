@@ -40,7 +40,7 @@ func (c *Client) SendPoll(ctx context.Context, recipient, question string, optio
 		return SendResult{Success: false, Message: fmt.Sprintf("Error sending poll: %v", err)}
 	}
 
-	c.persistSent(ctx, recipientJID, resp.ID, question, "", msg)
+	c.persistSent(ctx, recipientJID, resp.ID, question, false, msg)
 
 	// Cache option names locally so incoming vote SHA-256 hashes can be reversed.
 	if err := c.store.StorePollMetadata(ctx, resp.ID, recipientJID.String(), options); err != nil {
@@ -212,7 +212,7 @@ func (c *Client) SendContactCard(ctx context.Context, recipient, name, phone, vc
 		return SendResult{Success: false, Message: fmt.Sprintf("Error sending contact card: %v", err)}
 	}
 
-	c.persistSent(ctx, recipientJID, resp.ID, displayName+" (contact card)", "", msg)
+	c.persistSent(ctx, recipientJID, resp.ID, displayName+" (contact card)", false, msg)
 
 	return SendResult{
 		Success: true,

@@ -17,6 +17,7 @@ import (
 
 	"github.com/murandido/mcp-wpp/internal/media"
 	"github.com/murandido/mcp-wpp/internal/ratelimit"
+	"github.com/murandido/mcp-wpp/internal/security"
 	"github.com/murandido/mcp-wpp/internal/store"
 )
 
@@ -33,21 +34,40 @@ type SendMediaOptions struct {
 	Recipient string
 	Caption   string
 	MediaPath string
-	ViewOnce  bool
+	// Content and FileName carry the file itself instead of MediaPath, for a
+	// client that cannot place a file under the media root (a cloud agent).
+	// The bytes go straight to the upload and are never written to disk.
+	Content  []byte
+	FileName string
+	ViewOnce bool
 }
+
+// outgoingMedia is the attachment of one send: a file under the media root,
+// or bytes with the name they are shown under. The zero value is no media.
+type outgoingMedia struct {
+	path    string
+	content []byte
+	name    string
+}
+
+func (m outgoingMedia) present() bool { return m.path != "" || m.content != nil }
 
 // Send sends a text message.
 func (c *Client) Send(ctx context.Context, recipient, message string) SendResult {
-	return c.send(ctx, recipient, message, "", false)
+	return c.send(ctx, recipient, message, outgoingMedia{}, false)
 }
 
 // SendMediaWithOptions is the extensible entry point for media sends.
 func (c *Client) SendMediaWithOptions(ctx context.Context, opts SendMediaOptions) SendResult {
-	return c.send(ctx, opts.Recipient, opts.Caption, opts.MediaPath, opts.ViewOnce)
+	attachment := outgoingMedia{path: opts.MediaPath}
+	if opts.MediaPath == "" && opts.Content != nil {
+		attachment = outgoingMedia{content: opts.Content, name: security.SafeFilename(opts.FileName)}
+	}
+	return c.send(ctx, opts.Recipient, opts.Caption, attachment, opts.ViewOnce)
 }
 
 // send is the unified implementation shared by Send and SendMediaWithOptions.
-func (c *Client) send(ctx context.Context, recipient, message, mediaPath string, viewOnce bool) SendResult {
+func (c *Client) send(ctx context.Context, recipient, message string, attachment outgoingMedia, viewOnce bool) SendResult {
 	if !c.wa.IsConnected() {
 		return SendResult{Success: false, Message: "Not connected to WhatsApp"}
 	}
@@ -66,8 +86,8 @@ func (c *Client) send(ctx context.Context, recipient, message, mediaPath string,
 		MessageContextInfo: c.ephemeralContextInfo(ctx, recipientJID),
 	}
 
-	if mediaPath != "" {
-		if err := c.attachMedia(ctx, msg, mediaPath, message, viewOnce); err != nil {
+	if attachment.present() {
+		if err := c.attachMedia(ctx, msg, attachment, message, viewOnce); err != nil {
 			return SendResult{Success: false, Message: err.Error()}
 		}
 	} else {
@@ -81,7 +101,7 @@ func (c *Client) send(ctx context.Context, recipient, message, mediaPath string,
 	c.countSent()
 
 	// Cache the sent message so local history stays complete.
-	c.persistSent(ctx, recipientJID, resp.ID, message, mediaPath, msg)
+	c.persistSent(ctx, recipientJID, resp.ID, message, attachment.present(), msg)
 
 	return SendResult{
 		Success: true,
@@ -179,21 +199,28 @@ func parseRecipient(recipient string) (types.JID, error) {
 	return types.JID{User: canonical, Server: types.DefaultUserServer}, nil
 }
 
-// attachMedia uploads mediaPath and populates the appropriate message field.
+// attachMedia uploads the attachment and populates the appropriate message field.
 // When viewOnce is true, the resulting Image/Video/Audio submessage is flagged
 // as view-once. DocumentMessage has no view-once support in WhatsApp clients,
 // so the flag is silently ignored for documents.
-func (c *Client) attachMedia(ctx context.Context, msg *waProto.Message, mediaPath, caption string, viewOnce bool) error {
-	safePath, err := c.ValidateMediaPath(mediaPath)
-	if err != nil {
-		return fmt.Errorf("media_path rejected: %w", err)
+func (c *Client) attachMedia(ctx context.Context, msg *waProto.Message, attachment outgoingMedia, caption string, viewOnce bool) error {
+	mediaData, name := attachment.content, attachment.name
+	if attachment.path != "" {
+		safePath, err := c.ValidateMediaPath(attachment.path)
+		if err != nil {
+			return fmt.Errorf("media_path rejected: %w", err)
+		}
+		mediaData, err = os.ReadFile(safePath)
+		if err != nil {
+			return fmt.Errorf("read media file: %w", err)
+		}
+		name = filepath.Base(safePath)
 	}
-	mediaData, err := os.ReadFile(safePath)
-	if err != nil {
-		return fmt.Errorf("read media file: %w", err)
+	if len(mediaData) == 0 {
+		return fmt.Errorf("media is empty")
 	}
 
-	mediaType, mimeType := mediaTypeFromExt(safePath)
+	mediaType, mimeType := mediaTypeFromExt(name)
 
 	resp, err := c.wa.Upload(ctx, mediaData, mediaType)
 	if err != nil {
@@ -261,7 +288,7 @@ func (c *Client) attachMedia(ctx context.Context, msg *waProto.Message, mediaPat
 	case whatsmeow.MediaDocument:
 		// View-once on documents is not supported by WhatsApp clients; silently ignored.
 		msg.DocumentMessage = &waProto.DocumentMessage{
-			Title:         proto.String(filepath.Base(mediaPath)),
+			Title:         proto.String(name),
 			Caption:       proto.String(caption),
 			Mimetype:      proto.String(mimeType),
 			URL:           &resp.URL,
@@ -345,7 +372,7 @@ func documentMimeType(ext string) string {
 
 // persistSent writes a cache row for a message we sent so the local history
 // stays complete regardless of device multiplexing.
-func (c *Client) persistSent(ctx context.Context, recipientJID types.JID, msgID, message, mediaPath string, msg *waProto.Message) {
+func (c *Client) persistSent(ctx context.Context, recipientJID types.JID, msgID, message string, hasMedia bool, msg *waProto.Message) {
 	chatJID := c.cacheChatJID(recipientJID)
 
 	chatName := c.resolveChatNameFallback(ctx, recipientJID, "")
@@ -365,7 +392,7 @@ func (c *Client) persistSent(ctx context.Context, recipientJID types.JID, msgID,
 		storedMediaKey, storedFileSHA256, storedFileEnc              []byte
 		storedFileLength                                             uint64
 	)
-	if mediaPath != "" {
+	if hasMedia {
 		storedMediaType, storedFilename, storedURL, storedDirectPath,
 			storedMediaKey, storedFileSHA256, storedFileEnc, storedFileLength = extractMediaInfo(msg)
 	}

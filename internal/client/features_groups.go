@@ -502,7 +502,7 @@ func (c *Client) inviteParticipant(ctx context.Context, out *ParticipantOutcome,
 	if caption != "" {
 		summary += " — " + caption
 	}
-	c.persistSent(ctx, to, resp.ID, summary, "", msg)
+	c.persistSent(ctx, to, resp.ID, summary, false, msg)
 	out.Status = statusInviteSent
 	out.InviteMessageID = resp.ID
 }
