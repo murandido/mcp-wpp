@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -57,18 +59,22 @@ func (s *Server) registerSendMessage() {
 // -- send_file --------------------------------------------------------------
 
 type sendFileArgs struct {
-	Recipient    string `json:"recipient"`
-	MediaPath    string `json:"media_path"`
-	Caption      string `json:"caption,omitempty"`
-	MarkChatRead bool   `json:"mark_chat_read,omitempty"`
-	ViewOnce     bool   `json:"view_once,omitempty"`
+	Recipient     string `json:"recipient"`
+	MediaPath     string `json:"media_path,omitempty"`
+	ContentBase64 string `json:"content_base64,omitempty"`
+	FileName      string `json:"file_name,omitempty"`
+	Caption       string `json:"caption,omitempty"`
+	MarkChatRead  bool   `json:"mark_chat_read,omitempty"`
+	ViewOnce      bool   `json:"view_once,omitempty"`
 }
 
 func (s *Server) registerSendFile() {
 	tool := mcp.NewTool("send_file",
 		mcp.WithDescription("Upload and send a picture, video, document, or raw audio attachment via WhatsApp; the recipient sees a media message and the outgoing row is persisted to the local cache. Reversible via delete_message (revoke). For voice notes use send_audio_message (which transcodes to ogg/opus); for plain text use send_message. Returns a JSON object `{Success, Message, ID}` where `ID` is the WhatsApp message ID on success."),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description(recipientDesc)),
-		mcp.WithString("media_path", mcp.Required(), mcp.Description("absolute path to the media file; must sit under the configured media root (`WPP_MCP_MEDIA_ROOT`, default `<store>/uploads/`)")),
+		mcp.WithString("media_path", mcp.Description("absolute path to the media file; must sit under the configured media root (`WPP_MCP_MEDIA_ROOT`, default `<store>/uploads/`); give either this or content_base64")),
+		mcp.WithString("content_base64", mcp.Description("the file itself, standard base64, for a client that cannot place a file under the media root; sent from memory and never written to disk; at most 16 MiB decoded; needs file_name")),
+		mcp.WithString("file_name", mcp.Description("name the recipient sees for content_base64 (e.g. `report.xlsx`); its extension picks the media type")),
 		mcp.WithString("caption", mcp.Description("optional caption for image/video/document submessages; ignored for raw audio")),
 		mcp.WithBoolean("mark_chat_read", mcp.DefaultBool(false), mcp.Description("if true, also ack recent incoming messages in the chat to clear the unread badge (defaults to false)")),
 		mcp.WithBoolean("view_once", mcp.DefaultBool(false), mcp.Description("if true, mark image/video/audio submessages as view-once; silently ignored for documents (defaults to false)")),
@@ -78,22 +84,59 @@ func (s *Server) registerSendFile() {
 		mcp.WithOpenWorldHintAnnotation(true),
 	)
 	s.mcp.AddTool(tool, mcp.NewTypedToolHandler(func(ctx context.Context, req mcp.CallToolRequest, a sendFileArgs) (*mcp.CallToolResult, error) {
-		if a.Recipient == "" || a.MediaPath == "" {
-			return mcp.NewToolResultError("recipient and media_path are required"), nil
-		}
-		safePath, err := s.client.ValidateMediaPath(a.MediaPath)
+		opts, err := s.sendFileOptions(a)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		r := s.client.SendMediaWithOptions(ctx, client.SendMediaOptions{
-			Recipient: a.Recipient,
-			Caption:   a.Caption,
-			MediaPath: safePath,
-			ViewOnce:  a.ViewOnce,
-		})
+		r := s.client.SendMediaWithOptions(ctx, opts)
 		s.maybeMarkChatRead(ctx, r, a.Recipient, a.MarkChatRead)
 		return resultJSON(r)
 	}))
+}
+
+// maxInlineFileBytes caps content_base64 once decoded. The whole call sits in
+// memory (and in the outbox, under the confirm policy), so it stays well below
+// WhatsApp's own document limit.
+const maxInlineFileBytes = 16 << 20
+
+var errInlineFileSize = fmt.Errorf("content_base64 must decode to 1 byte to %d MiB", maxInlineFileBytes>>20)
+
+// sendFileOptions resolves send_file's arguments: exactly one of media_path
+// (confined to the media root) or content_base64 with a file_name.
+func (s *Server) sendFileOptions(a sendFileArgs) (client.SendMediaOptions, error) {
+	opts := client.SendMediaOptions{Recipient: a.Recipient, Caption: a.Caption, ViewOnce: a.ViewOnce}
+	switch {
+	case a.Recipient == "":
+		return opts, errors.New("recipient is required")
+	case a.MediaPath != "" && a.ContentBase64 != "":
+		return opts, errors.New("give either media_path or content_base64, not both")
+	case a.MediaPath != "":
+		safePath, err := s.client.ValidateMediaPath(a.MediaPath)
+		if err != nil {
+			return opts, err
+		}
+		opts.MediaPath = safePath
+		return opts, nil
+	case a.ContentBase64 != "":
+		if strings.TrimSpace(a.FileName) == "" {
+			return opts, errors.New("file_name is required with content_base64")
+		}
+		// Refuse an oversized payload before decoding it into a second copy.
+		if base64.StdEncoding.DecodedLen(len(a.ContentBase64)) > maxInlineFileBytes+2 {
+			return opts, errInlineFileSize
+		}
+		content, err := base64.StdEncoding.DecodeString(a.ContentBase64)
+		if err != nil {
+			return opts, fmt.Errorf("content_base64 is not valid base64: %w", err)
+		}
+		if len(content) == 0 || len(content) > maxInlineFileBytes {
+			return opts, errInlineFileSize
+		}
+		opts.Content, opts.FileName = content, a.FileName
+		return opts, nil
+	default:
+		return opts, errors.New("media_path or content_base64 is required")
+	}
 }
 
 // -- send_audio_message -----------------------------------------------------

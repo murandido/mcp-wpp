@@ -160,7 +160,7 @@ func (c *Client) SendReply(ctx context.Context, chatJID, targetMessageID, target
 	}
 	// Cache the reply like Send does. The cache has no column for the quote,
 	// so the row holds the text only.
-	c.persistSent(ctx, chat, resp.ID, body, "", msg)
+	c.persistSent(ctx, chat, resp.ID, body, false, msg)
 	return nil
 }
 
